@@ -23,6 +23,10 @@ def _load_model() -> Any:
 
 class EmbeddingService:
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if settings.embedding_provider != "local":
+            raise NotImplementedError(
+                "ApiEmbeddingProvider 将在阶段 2 实现，当前不能切换到 API Provider"
+            )
         if not texts or any(not text.strip() for text in texts):
             raise ValueError("Embedding 输入不能为空")
 

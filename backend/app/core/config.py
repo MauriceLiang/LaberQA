@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +33,17 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""
     embedding_api_model: str = ""
 
+    @model_validator(mode="after")
+    def require_api_embedding_settings(self) -> "Settings":
+        if self.embedding_provider == "api" and not all(
+            (self.embedding_api_key, self.embedding_base_url, self.embedding_api_model)
+        ):
+            raise ValueError(
+                "EMBEDDING_API_KEY, EMBEDDING_BASE_URL and EMBEDDING_API_MODEL "
+                "are required when EMBEDDING_PROVIDER=api"
+            )
+        return self
+
     @property
     def database_path(self) -> Path:
         prefix = "sqlite:///"
@@ -44,6 +56,14 @@ class Settings(BaseSettings):
 
         path = Path(raw_path)
         return path if path.is_absolute() else PROJECT_ROOT / path
+
+    @property
+    def embedding_model(self) -> str:
+        return (
+            self.local_embedding_model
+            if self.embedding_provider == "local"
+            else self.embedding_api_model
+        )
 
     @property
     def faiss_path(self) -> Path:

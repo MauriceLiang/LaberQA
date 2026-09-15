@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "generate:api-types": "openapi-typescript http://127.0.0.1:8000/openapi.json -o src/types/api.generated.ts"
   },
   "dependencies": {
     "axios": "^1.8.4",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.5.0",
     "@vitejs/plugin-vue": "^6.0.8",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.7.3",
     "vite": "^8.2.2",
     "vue-tsc": "^2.2.0"
