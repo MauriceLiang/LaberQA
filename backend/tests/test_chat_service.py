@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -8,6 +9,7 @@ from uuid import UUID
 from app.core.config import Settings
 from app.schemas.contracts import ChatRequest
 from app.services.chat_service import ChatService
+from app.services.compliance import COMPLIANCE_NOTICE
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
 
@@ -36,6 +38,7 @@ class FakeRetrieval:
 class FakeLlm:
     def __init__(self) -> None:
         self.completions: list[tuple[list[dict[str, str]], bool]] = []
+        self.streams: list[list[dict[str, str]]] = []
 
     async def complete(
         self, messages: list[dict[str, str]], *, json_mode: bool = False
@@ -46,6 +49,7 @@ class FakeLlm:
         return "那公司以不符合录用条件解除劳动关系是否合法？"
 
     async def stream(self, messages: list[dict[str, str]]):
+        self.streams.append(messages)
         yield "应结合具体证据判断。"
         yield "建议保留书面材料。"
 
@@ -104,11 +108,18 @@ def _service(directory: str, *, score: float = 0.82):
     return service, session_service, retrieval, llm
 
 
-def _events(service: ChatService, session_id: str, request: FakeRequest | None = None):
+def _events(
+    service: ChatService,
+    session_id: str,
+    request: FakeRequest | None = None,
+    *,
+    question: str = "那公司这样解除劳动关系呢？",
+    answer_style: str = "plain",
+):
     payload = ChatRequest(
         session_id=UUID(session_id),
-        question="那公司这样解除劳动关系呢？",
-        answer_style="plain",
+        question=question,
+        answer_style=answer_style,
     )
     return asyncio.run(_collect(service.stream_chat(payload, request or FakeRequest())))
 
@@ -223,3 +234,144 @@ def test_empty_model_stream_emits_a_terminal_error() -> None:
         assert [
             message["role"] for message in sessions.list_messages(session["id"])
         ] == ["user"]
+
+
+def test_material_request_emits_tool_before_answer_and_persists_tool_result() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, llm = _service(directory)
+        session = sessions.create_session()
+
+        events = _events(
+            service,
+            session["id"],
+            question="公司拖欠工资，我应该准备什么材料？",
+        )
+
+        assert [event.splitlines()[0] for event in events] == [
+            "event: tool",
+            "event: token",
+            "event: token",
+            "event: sources",
+            "event: done",
+        ]
+        tool_event = json.loads(events[0].splitlines()[1][6:])
+        assert tool_event["tool_name"] == "generate_rights_material_checklist"
+        assert tool_event["input"] == {
+            "dispute_type": "欠薪",
+            "description": "公司拖欠工资，我应该准备什么材料？",
+        }
+        assert tool_event["output"]["materials"] == [
+            "劳动合同或能够证明劳动关系的材料",
+            "工资条、银行流水等工资支付记录",
+            "考勤、排班或工作记录",
+            "与用人单位沟通欠薪问题的记录",
+        ]
+        assert "工资条、银行流水等工资支付记录" in llm.streams[0][0]["content"]
+        assistant = sessions.list_messages(session["id"])[-1]
+        assert assistant["tool_executions"] == [tool_event]
+
+
+def test_tool_failure_emits_only_terminal_error_without_fabricated_result() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory)
+        session = sessions.create_session()
+
+        def fail_tool(_payload):
+            raise RuntimeError("tool unavailable")
+
+        service.material_checklist_tool.execute = fail_tool
+        events = _events(
+            service,
+            session["id"],
+            question="公司拖欠工资，我应该准备什么材料？",
+        )
+
+        assert len(events) == 1
+        assert events[0].startswith("event: error")
+        assert '"message":"材料清单生成失败"' in events[0]
+        assert [
+            message["role"] for message in sessions.list_messages(session["id"])
+        ] == ["user"]
+
+
+def test_material_checklist_is_not_run_when_evidence_gate_refuses():
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory, score=0.1)
+        session = sessions.create_session()
+
+        events = _events(
+            service,
+            session["id"],
+            question="公司拖欠工资，我应该准备什么材料？",
+        )
+
+        assert [event.splitlines()[0] for event in events] == [
+            "event: token",
+            "event: sources",
+            "event: done",
+        ]
+        assert sessions.list_messages(session["id"])[-1]["tool_executions"] == []
+
+
+def test_compliance_notice_is_forced_for_both_styles_without_changing_sources():
+    outputs = []
+    for answer_style in ("plain", "legal"):
+        with tempfile.TemporaryDirectory() as directory:
+            service, sessions, retrieval, llm = _service(directory)
+            session = sessions.create_session()
+            events = _events(
+                service,
+                session["id"],
+                question="劳动仲裁的申请期限是多久？",
+                answer_style=answer_style,
+            )
+            response = sessions.list_messages(session["id"])[-1]
+            prompt = llm.streams[0][0]["content"]
+            sources_event = next(
+                event for event in events if event.startswith("event: sources")
+            )
+            sources = json.loads(sources_event.splitlines()[1][6:])
+            outputs.append((response, sources, retrieval.queries, prompt))
+
+            assert COMPLIANCE_NOTICE in response["content"]
+            assert "需要合规提示：true" in prompt
+            assert COMPLIANCE_NOTICE in prompt
+
+    assert outputs[0][1] == outputs[1][1]
+    assert outputs[0][2] == outputs[1][2]
+    assert outputs[0][0]["citations"] == outputs[1][0]["citations"]
+    assert "面向普通劳动者" in outputs[0][3]
+    assert "严谨、客观" in outputs[1][3]
+
+
+def test_concrete_route_in_final_answer_adds_notice_even_if_question_did_not():
+    class RouteAnswerLlm(FakeLlm):
+        async def stream(self, messages: list[dict[str, str]]):
+            self.streams.append(messages)
+            yield "可以向当地劳动监察部门投诉。"
+
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory)
+        llm = RouteAnswerLlm()
+        service.llm_client = llm
+        session = sessions.create_session()
+
+        events = _events(service, session["id"], question="我现在应该如何处理？")
+
+        assistant = sessions.list_messages(session["id"])[-1]
+        assert COMPLIANCE_NOTICE in assistant["content"]
+        assert events[-3].startswith("event: token")
+
+
+def test_compliance_notice_is_not_triggered_by_retrieved_evidence_alone():
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, retrieval, llm = _service(directory)
+        retrieval.evidence[0]["content"] = "可以向当地劳动监察部门了解情况。"
+        session = sessions.create_session()
+
+        _events(service, session["id"], question="我应该如何保存工资记录？")
+
+        assistant = sessions.list_messages(session["id"])[-1]
+        prompt = llm.streams[0][0]["content"]
+        assert COMPLIANCE_NOTICE not in assistant["content"]
+        assert "需要合规提示：false" in prompt

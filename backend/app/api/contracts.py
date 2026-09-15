@@ -287,14 +287,19 @@ async def stream_chat(
 @router.post(
     "/tools/material-checklist",
     response_model=ApiResponse[ToolExecutionItem],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["tools"],
     summary="Generate a material checklist",
 )
 def material_checklist(
     payload: MaterialChecklistInput,
+    service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ApiResponse[ToolExecutionItem]:
-    _contract_only()
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=service.execute_material_checklist(payload),
+    )
 
 
 @router.get(
