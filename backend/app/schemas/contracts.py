@@ -202,6 +202,8 @@ class EvaluationRunSummary(JobProgress):
 class EvaluationRunConfig(ApiModel):
     answer_style: AnswerStyle
     llm_model: str
+    evaluator_model: str
+    evaluator_prompt_version: str
     embedding_provider: Literal["local", "api"]
     embedding_model: str
     embedding_normalize: bool

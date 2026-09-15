@@ -8,7 +8,7 @@ from unittest.mock import Mock
 from uuid import UUID
 
 from app.core.config import Settings
-from app.schemas.contracts import ChatRequest, MissingKnowledgeQuery
+from app.schemas.contracts import AnswerStyle, ChatRequest, MissingKnowledgeQuery
 from app.services.chat_service import ChatService
 from app.services.compliance import COMPLIANCE_NOTICE
 from app.services.missing_knowledge import ExecutionMode, MissingKnowledgeReason
@@ -157,6 +157,35 @@ def test_rag_stream_persists_answer_and_only_retrieved_citations() -> None:
         assert messages[0]["rewritten_question"] == "那公司这样解除劳动关系呢？"
         assert messages[1]["content"] == "应结合具体证据判断。建议保留书面材料。"
         assert messages[1]["citations"][0]["chunk_id"] == 1
+
+
+def test_evaluation_answer_once_reuses_rag_without_production_persistence() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, retrieval, _ = _service(directory)
+
+        result = asyncio.run(
+            service.answer_once(
+                "劳动仲裁时效是多少？",
+                [],
+                AnswerStyle.PLAIN,
+                mode=ExecutionMode.EVALUATION,
+            )
+        )
+
+        assert result["refused"] is False
+        assert result["citations"][0]["chunk_id"] == 1
+        assert result["compliance_shown"] is True
+        assert COMPLIANCE_NOTICE in result["answer"]
+        assert retrieval.queries == ["劳动仲裁时效是多少？"]
+        with sqlite3.connect(sessions.repository.database_path) as connection:
+            assert connection.execute("SELECT COUNT(*) FROM session").fetchone()[0] == 0
+            assert connection.execute("SELECT COUNT(*) FROM message").fetchone()[0] == 0
+            assert (
+                connection.execute("SELECT COUNT(*) FROM missing_knowledge").fetchone()[
+                    0
+                ]
+                == 0
+            )
 
 
 def test_low_similarity_evidence_is_refused_without_calling_model() -> None:

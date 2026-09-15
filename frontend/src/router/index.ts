@@ -4,6 +4,7 @@ import HomeView from '@/views/HomeView.vue'
 import DocumentsView from '@/views/DocumentsView.vue'
 import ChatView from '@/views/ChatView.vue'
 import MissingKnowledgeView from '@/views/MissingKnowledgeView.vue'
+import EvaluationView from '@/views/EvaluationView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,6 +28,11 @@ const router = createRouter({
       path: '/missing-knowledge',
       name: 'missing-knowledge',
       component: MissingKnowledgeView,
+    },
+    {
+      path: '/evaluations',
+      name: 'evaluations',
+      component: EvaluationView,
     },
   ],
 })

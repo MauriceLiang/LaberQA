@@ -12,7 +12,11 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_chat_service, get_document_service
+from app.api.dependencies import (
+    get_chat_service,
+    get_document_service,
+    get_evaluation_service,
+)
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.schemas.common import ApiResponse, PageQuery, PageResult
@@ -36,6 +40,7 @@ from app.schemas.contracts import (
     ExperimentJob,
     ExperimentQuery,
     ExperimentSummary,
+    JobStatus,
     MaterialChecklistInput,
     MessageItem,
     MissingKnowledgeItem,
@@ -46,6 +51,7 @@ from app.schemas.contracts import (
 )
 from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
+from app.services.evaluation_service import EvaluationService
 
 router = APIRouter()
 
@@ -305,52 +311,109 @@ def material_checklist(
 @router.get(
     "/evaluations/cases",
     response_model=ApiResponse[PageResult[EvaluationCase]],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["evaluations"],
     summary="List evaluation cases",
 )
 def list_evaluation_cases(
     query: Annotated[EvaluationCaseQuery, Query()],
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
 ) -> ApiResponse[PageResult[EvaluationCase]]:
-    _contract_only()
+    items, total = service.list_cases(
+        page=query.page,
+        size=query.size,
+        topic=query.topic,
+        expected_type=query.expected_type.value if query.expected_type else None,
+        is_multi_turn=query.is_multi_turn,
+    )
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[EvaluationCase.model_validate(item) for item in items],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
 
 
 @router.post(
     "/evaluations/runs",
     response_model=ApiResponse[EvaluationRunJob],
     status_code=202,
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["evaluations"],
     summary="Create an evaluation run",
 )
 def create_evaluation_run(
     payload: EvaluationRunCreate,
+    background_tasks: BackgroundTasks,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
 ) -> ApiResponse[EvaluationRunJob]:
-    _contract_only()
+    run = service.create_run(payload)
+    background_tasks.add_task(service.execute_run, int(run["id"]))
+    return ApiResponse(
+        code=0,
+        message="accepted",
+        data=EvaluationRunJob(
+            run_id=int(run["id"]),
+            status=JobStatus.PENDING,
+            progress_current=0,
+            progress_total=int(run["progress_total"]),
+            error_message=None,
+        ),
+    )
 
 
 @router.get(
     "/evaluations/runs",
     response_model=ApiResponse[PageResult[EvaluationRunSummary]],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["evaluations"],
     summary="List evaluation runs",
 )
 def list_evaluation_runs(
     query: Annotated[EvaluationRunQuery, Query()],
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
 ) -> ApiResponse[PageResult[EvaluationRunSummary]]:
-    _contract_only()
+    items, total = service.list_runs(
+        page=query.page,
+        size=query.size,
+        status=query.status.value if query.status else None,
+    )
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[EvaluationRunSummary.model_validate(item) for item in items],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
 
 
 @router.get(
     "/evaluations/runs/{id}",
     response_model=ApiResponse[EvaluationRunDetail],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["evaluations"],
     summary="Get an evaluation run",
 )
-def get_evaluation_run(id: int) -> ApiResponse[EvaluationRunDetail]:
-    _contract_only()
+def get_evaluation_run(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationRunDetail]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=EvaluationRunDetail.model_validate(
+            _schema_fields(EvaluationRunDetail, service.get_run(id))
+        ),
+    )
 
 
 @router.get(
