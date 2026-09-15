@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import initialize_database
 from app.core.errors import register_exception_handlers
 from app.core.logging_config import configure_logging
+from app.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     configure_logging()
     initialize_database()
+    document_service = DocumentService(settings)
+    document_service.recover_interrupted_imports()
+    app.state.document_service = document_service
     logger.info("Application startup complete")
     yield
 

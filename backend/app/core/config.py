@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/app.db"
     upload_dir: Path = Path("./uploads")
     faiss_dir: Path = Path("./data/faiss")
+    max_upload_size_mb: int = Field(default=20, ge=1)
+    doc_converter: str = "libreoffice"
+    chunk_size: int = Field(default=600, ge=100, le=2000)
+    chunk_overlap: int = Field(default=100, ge=0, le=500)
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
@@ -35,6 +39,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_api_embedding_settings(self) -> "Settings":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE")
         if self.embedding_provider == "api" and not all(
             (self.embedding_api_key, self.embedding_base_url, self.embedding_api_model)
         ):

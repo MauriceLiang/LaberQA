@@ -1,9 +1,10 @@
 from typing import Annotated, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.api.dependencies import get_document_service
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.schemas.common import ApiResponse, PageQuery, PageResult
@@ -28,13 +29,14 @@ from app.schemas.contracts import (
     ExperimentQuery,
     ExperimentSummary,
     MaterialChecklistInput,
+    MessageItem,
     MissingKnowledgeItem,
     MissingKnowledgeQuery,
     MissingKnowledgeUpdate,
-    MessageItem,
     SessionItem,
     ToolExecutionItem,
 )
+from app.services.document_service import DocumentService
 
 router = APIRouter()
 
@@ -46,7 +48,10 @@ CONTRACT_RESPONSES = {
     413: {**_ERROR_RESPONSE, "description": "Uploaded file is too large"},
     422: {**_ERROR_RESPONSE, "description": "Request validation failed"},
     500: {**_ERROR_RESPONSE, "description": "Internal server error"},
-    501: {**_ERROR_RESPONSE, "description": "Business implementation is scheduled for a later phase"},
+    501: {
+        **_ERROR_RESPONSE,
+        "description": "Business implementation is scheduled for a later phase",
+    },
     503: {**_ERROR_RESPONSE, "description": "A required service is unavailable"},
 }
 
@@ -69,8 +74,20 @@ def _contract_only() -> NoReturn:
 )
 async def upload_document(
     file: Annotated[UploadFile, File(description="PDF, DOC, DOCX or TXT document")],
+    background_tasks: BackgroundTasks,
+    service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> ApiResponse[DocumentUploadAccepted]:
-    _contract_only()
+    document = service.upload(file.file, file.filename, file.content_type)
+    background_tasks.add_task(service.import_document, document["id"])
+    return ApiResponse(
+        code=0,
+        message="accepted",
+        data=DocumentUploadAccepted(
+            document_id=document["id"],
+            file_name=document["file_name"],
+            status=document["status"],
+        ),
+    )
 
 
 @router.get(
@@ -82,8 +99,28 @@ async def upload_document(
 )
 def list_documents(
     query: Annotated[DocumentQuery, Query()],
+    service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> ApiResponse[PageResult[DocumentItem]]:
-    _contract_only()
+    items, total = service.repository.list_documents(
+        page=query.page,
+        size=query.size,
+        status=query.status.value if query.status else None,
+        keyword=query.keyword,
+    )
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[
+                DocumentItem.model_validate(_schema_fields(DocumentItem, item))
+                for item in items
+            ],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
 
 
 @router.get(
@@ -93,8 +130,18 @@ def list_documents(
     tags=["documents"],
     summary="Get a document and its import status",
 )
-def get_document(id: int) -> ApiResponse[DocumentItem]:
-    _contract_only()
+def get_document(
+    id: int,
+    service: Annotated[DocumentService, Depends(get_document_service)],
+) -> ApiResponse[DocumentItem]:
+    document = service.repository.get_document(id)
+    if document is None:
+        raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=DocumentItem.model_validate(_schema_fields(DocumentItem, document)),
+    )
 
 
 @router.post(
@@ -105,8 +152,18 @@ def get_document(id: int) -> ApiResponse[DocumentItem]:
     tags=["documents"],
     summary="Reimport a failed document",
 )
-def reimport_document(id: int) -> ApiResponse[DocumentReimportAccepted]:
-    _contract_only()
+def reimport_document(
+    id: int,
+    background_tasks: BackgroundTasks,
+    service: Annotated[DocumentService, Depends(get_document_service)],
+) -> ApiResponse[DocumentReimportAccepted]:
+    document = service.reimport(id)
+    background_tasks.add_task(service.import_document, id)
+    return ApiResponse(
+        code=0,
+        message="accepted",
+        data=DocumentReimportAccepted(document_id=id, status=document["status"]),
+    )
 
 
 @router.get(
@@ -119,8 +176,29 @@ def reimport_document(id: int) -> ApiResponse[DocumentReimportAccepted]:
 def list_document_chunks(
     id: int,
     query: Annotated[PageQuery, Query()],
+    service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> ApiResponse[PageResult[ChunkItem]]:
-    _contract_only()
+    if service.repository.get_document(id) is None:
+        raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+    items, total = service.repository.list_chunks(id, page=query.page, size=query.size)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[
+                ChunkItem.model_validate(_schema_fields(ChunkItem, item))
+                for item in items
+            ],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
+
+
+def _schema_fields(model: type, source: dict) -> dict:
+    return {field: source[field] for field in model.model_fields if field in source}
 
 
 @router.post(
@@ -173,7 +251,9 @@ async def stream_chat(payload: ChatRequest) -> StreamingResponse:
     tags=["tools"],
     summary="Generate a material checklist",
 )
-def material_checklist(payload: MaterialChecklistInput) -> ApiResponse[ToolExecutionItem]:
+def material_checklist(
+    payload: MaterialChecklistInput,
+) -> ApiResponse[ToolExecutionItem]:
     _contract_only()
 
 
@@ -198,7 +278,9 @@ def list_evaluation_cases(
     tags=["evaluations"],
     summary="Create an evaluation run",
 )
-def create_evaluation_run(payload: EvaluationRunCreate) -> ApiResponse[EvaluationRunJob]:
+def create_evaluation_run(
+    payload: EvaluationRunCreate,
+) -> ApiResponse[EvaluationRunJob]:
     _contract_only()
 
 
