@@ -1,2 +1,18 @@
 /docs
 /.idea
+/backend/.venv
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+*.tsbuildinfo
+
+# Local configuration and generated data
+/.env
+/frontend/.env
+/data/
+/uploads/
