@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -10,7 +11,7 @@ from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.main import app
 from app.schemas.contracts import EvaluationCase, ExperimentConfig
-from app.services.embedding import EmbeddingService
+from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -127,13 +128,18 @@ class Phase1ContractTests(unittest.TestCase):
         self.assertEqual(response.json()["data"]["embedding_model"], "embedding-model")
 
     def test_api_embedding_does_not_silently_fall_back_to_local(self) -> None:
-        original_provider = settings.embedding_provider
-        settings.embedding_provider = "api"
-        try:
-            with self.assertRaisesRegex(NotImplementedError, "阶段 2 实现"):
-                EmbeddingService().embed_documents(["测试文本"])
-        finally:
-            settings.embedding_provider = original_provider
+        config = Settings(
+            embedding_provider="api",
+            embedding_api_key="test-key",
+            embedding_base_url="https://example.test/v1",
+            embedding_api_model="test-embedding",
+        )
+        with httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(503))
+        ) as client:
+            service = EmbeddingService(config, api_client=client)
+            with self.assertRaises(EmbeddingUnavailableError):
+                service.embed_documents(["测试文本"])
 
     def test_experiment_constraints_and_utc_serialization(self) -> None:
         with self.assertRaises(ValidationError):
@@ -195,7 +201,9 @@ class Phase1ContractTests(unittest.TestCase):
                 self.assertTrue(any(row[2] for row in indexes))
                 columns = {
                     row[1]
-                    for row in connection.execute("PRAGMA table_info('evaluation_case')")
+                    for row in connection.execute(
+                        "PRAGMA table_info('evaluation_case')"
+                    )
                 }
                 self.assertTrue(
                     {

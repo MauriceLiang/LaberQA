@@ -171,7 +171,9 @@ class EvaluationCaseQuery(PageQuery):
 
 
 class EvaluationRunCreate(ApiModel):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     case_ids: list[int] | None = Field(default=None, min_length=1)
     answer_style: AnswerStyle
 
@@ -282,7 +284,9 @@ class ExperimentConfig(ApiModel):
 
 
 class ExperimentCreate(ApiModel):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     case_ids: list[int] | None = Field(default=None, min_length=1)
     answer_style: AnswerStyle
     configs: list[ExperimentConfig] = Field(min_length=1)

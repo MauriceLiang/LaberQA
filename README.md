@@ -1,6 +1,6 @@
 # 劳动权益咨询问答台
 
-Phase 0 初始化：FastAPI 后端与 Vue 3 前端骨架。
+Phase 2 已完成后端文档知识库导入链路：支持文档校验、文本解析、条款分块、Embedding、FAISS 索引和文档管理 API。其余会话、问答、评测和检索实验接口仍按后续阶段逐步实现。
 
 ## 环境要求
 
@@ -23,12 +23,21 @@ python3.11 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 ```
 
+安装测试与代码检查依赖：
+
+```sh
+cd backend
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
 下载并验证本地 Embedding 模型（首次运行需要网络）：
 
 ```sh
 cd backend
 .venv/bin/python -m app.scripts.verify_embedding
 ```
+
+`.pdf`、`.docx`、`.txt` 可直接导入；旧版 `.doc` 需要本机安装 LibreOffice。默认上传上限为 20 MB，默认分块大小/重叠分别为 600/100 字符。备用 API Provider 使用 OpenAI-compatible Embeddings 请求：`POST {EMBEDDING_BASE_URL}/embeddings`，请求体包含 `model` 与 `input`；配置 Provider、模型、归一化方式或分块参数变化后，不兼容的 FAISS 索引会被标记并拒绝检索。
 
 启动 API：
 
@@ -50,7 +59,7 @@ npm run dev
 
 前端默认运行于 <http://127.0.0.1:5173>，启动后会调用后端 `/api/health` 显示服务状态。
 
-## Phase 1 接口契约
+## API 与验收
 
 FastAPI 的 `/openapi.json` 是 REST 契约源。启动后端后，在前端目录生成机器维护的 REST 类型：
 
@@ -59,6 +68,15 @@ cd frontend
 npm run generate:api-types
 ```
 
-SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。Phase 1 的业务路由只发布请求/响应契约，尚未实现的业务操作会返回 HTTP 501；后续阶段逐步接入真实服务。
+SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。Phase 2 已实现文档上传、列表、详情、Chunk 分页和失败文档重导入 API；上传接口返回 HTTP 202，后台处理状态可从文档详情查询。其余业务操作暂时保留 HTTP 501 契约响应。
 
-Phase 1 已冻结 Embedding 配置与 `EmbeddingSignature`/`IndexMeta` 数据结构。Provider 切换和 FAISS 元数据兼容校验按开发流程拆解安排在 Phase 2（BE-DOC-08～11）；在该阶段完成前，设置 `EMBEDDING_PROVIDER=api` 时向量编码会明确报错，不会回退到本地模型。
+在后端目录运行验收与静态检查：
+
+```sh
+cd backend
+.venv/bin/python -m pytest -q
+.venv/bin/ruff check app tests
+.venv/bin/ruff format --check app tests
+```
+
+验收通过后，测试使用进程内 FastAPI TestClient，不会持续占用 HTTP 端口。手动启动的 API 服务可用 `Ctrl+C` 关闭。
