@@ -194,7 +194,7 @@ class EvaluationService:
             correct = refused and not final["citations"]
             multi_turn_correct = None
         else:
-            judgement = await self._judge_answer(case, final)
+            judgement = await self.judge_answer(case, final)
             correct = judgement["correct"]
             multi_turn_correct = (
                 correct and judgement["context_retained"]
@@ -230,7 +230,7 @@ class EvaluationService:
             "error_message": None,
         }
 
-    async def _judge_answer(
+    async def judge_answer(
         self, case: dict[str, Any], final: dict[str, Any]
     ) -> dict[str, bool]:
         prompt_input = {

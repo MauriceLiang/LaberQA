@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
+from app.core.error_codes import ErrorCode
 from app.main import app
 from app.schemas.contracts import EvaluationCase, ExperimentConfig
 from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
@@ -77,6 +78,12 @@ class Phase1ContractTests(unittest.TestCase):
             ("/api/evaluations/runs/{id}", "get"),
         ):
             self.assertNotIn("501", schema["paths"][path][method]["responses"])
+        for path, method in (
+            ("/api/retrieval-experiments", "get"),
+            ("/api/retrieval-experiments", "post"),
+            ("/api/retrieval-experiments/{id}", "get"),
+        ):
+            self.assertNotIn("501", schema["paths"][path][method]["responses"])
 
     def test_validation_uses_envelope_and_exposes_request_id(self) -> None:
         with TestClient(app) as client:
@@ -94,6 +101,30 @@ class Phase1ContractTests(unittest.TestCase):
         self.assertEqual(
             response.headers["access-control-expose-headers"], "X-Request-ID"
         )
+
+    def test_invalid_experiment_config_uses_its_business_error_code(self) -> None:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/retrieval-experiments",
+                json={
+                    "name": "invalid",
+                    "case_ids": None,
+                    "answer_style": "plain",
+                    "configs": [
+                        {
+                            "chunk_size": 400,
+                            "chunk_overlap": 400,
+                            "top_k": 5,
+                            "rerank_enabled": False,
+                            "rerank_top_n": 5,
+                            "score_threshold": 0.35,
+                        }
+                    ],
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], ErrorCode.INVALID_EXPERIMENT_CONFIG)
 
     def test_session_route_creates_a_session(self) -> None:
         with TestClient(app) as client:

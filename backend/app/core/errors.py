@@ -35,9 +35,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        code = (
+            ErrorCode.INVALID_EXPERIMENT_CONFIG
+            if request.method == "POST"
+            and request.url.path.endswith("/retrieval-experiments")
+            else ErrorCode.INVALID_REQUEST
+        )
         return JSONResponse(
-            status_code=422,
-            content=_error_body(ErrorCode.INVALID_REQUEST, "请求参数不合法"),
+            status_code=400 if code == ErrorCode.INVALID_EXPERIMENT_CONFIG else 422,
+            content=_error_body(code, "请求参数不合法"),
         )
 
     @app.exception_handler(StarletteHTTPException)

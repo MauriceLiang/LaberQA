@@ -17,6 +17,7 @@ from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
 from app.services.evaluation_service import EvaluationService
 from app.services.retrieval import RetrievalService
+from app.services.retrieval_experiment_service import RetrievalExperimentService
 from app.services.session_service import SessionService
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,15 @@ async def lifespan(app: FastAPI):
     evaluation_service = EvaluationService(chat_service, settings)
     evaluation_service.initialize()
     app.state.evaluation_service = evaluation_service
+    experiment_service = RetrievalExperimentService(
+        chat_service,
+        settings,
+        document_repository=document_service.repository,
+        evaluation_service=evaluation_service,
+        embedding_service=document_service.embedding_service,
+    )
+    experiment_service.initialize()
+    app.state.retrieval_experiment_service = experiment_service
     logger.info("Application startup complete")
     yield
 

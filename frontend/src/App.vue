@@ -12,8 +12,9 @@
         <RouterLink to="/documents">资料管理</RouterLink>
         <RouterLink to="/missing-knowledge">知识缺口</RouterLink>
         <RouterLink to="/evaluations">问答评测</RouterLink>
+        <RouterLink to="/retrieval-experiments">检索实验</RouterLink>
       </nav>
-      <el-tag type="success" effect="plain">Phase 8</el-tag>
+      <el-tag type="success" effect="plain">Phase 9</el-tag>
     </el-header>
     <el-main class="app-main">
       <router-view />

@@ -16,6 +16,7 @@ from app.api.dependencies import (
     get_chat_service,
     get_document_service,
     get_evaluation_service,
+    get_retrieval_experiment_service,
 )
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
@@ -52,6 +53,7 @@ from app.schemas.contracts import (
 from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
 from app.services.evaluation_service import EvaluationService
+from app.services.retrieval_experiment_service import RetrievalExperimentService
 
 router = APIRouter()
 
@@ -471,34 +473,81 @@ def update_missing_knowledge(
 @router.get(
     "/retrieval-experiments",
     response_model=ApiResponse[PageResult[ExperimentSummary]],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["retrieval-experiments"],
     summary="List retrieval experiments",
 )
 def list_experiments(
     query: Annotated[ExperimentQuery, Query()],
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
 ) -> ApiResponse[PageResult[ExperimentSummary]]:
-    _contract_only()
+    items, total = service.list_experiments(
+        page=query.page,
+        size=query.size,
+        status=query.status.value if query.status else None,
+    )
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[ExperimentSummary.model_validate(item) for item in items],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
 
 
 @router.post(
     "/retrieval-experiments",
     response_model=ApiResponse[ExperimentJob],
     status_code=202,
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["retrieval-experiments"],
     summary="Create a retrieval experiment",
 )
-def create_experiment(payload: ExperimentCreate) -> ApiResponse[ExperimentJob]:
-    _contract_only()
+def create_experiment(
+    payload: ExperimentCreate,
+    background_tasks: BackgroundTasks,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[ExperimentJob]:
+    experiment = service.create_experiment(payload)
+    background_tasks.add_task(service.execute_experiment, int(experiment["id"]))
+    return ApiResponse(
+        code=0,
+        message="accepted",
+        data=ExperimentJob(
+            experiment_id=int(experiment["id"]),
+            status=JobStatus.PENDING,
+            progress_current=0,
+            progress_total=int(experiment["progress_total"]),
+            error_message=None,
+        ),
+    )
 
 
 @router.get(
     "/retrieval-experiments/{id}",
     response_model=ApiResponse[ExperimentDetail],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["retrieval-experiments"],
     summary="Get a retrieval experiment",
 )
-def get_experiment(id: int) -> ApiResponse[ExperimentDetail]:
-    _contract_only()
+def get_experiment(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[ExperimentDetail]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=ExperimentDetail.model_validate(
+            _schema_fields(ExperimentDetail, service.get_experiment(id))
+        ),
+    )
