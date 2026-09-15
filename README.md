@@ -1,84 +1,162 @@
 # 劳动权益咨询问答台
 
-Phase 9 在 Phase 8 的 60 条问答评测基础上，加入异步检索策略实验，可比较分块、Top-k 与 Rerank 配置，并隔离构建实验 FAISS 索引。
+一个基于检索增强生成（RAG）的劳动权益信息辅助工具。用户导入法规与政策资料后，可以用自然语言提问；系统检索知识库中的相关依据，生成回答并展示来源。资料不足时，系统会提示依据不足，不以模型常识替代法规证据。
 
-## 环境要求
+> 本项目用于信息辅助，不替代律师或行政机关提供的正式法律意见。
 
-- Python 3.11
-- Node.js 20.19+（当前项目也可使用较新的 LTS）
-- 本地 Embedding 模型 `BAAI/bge-small-zh-v1.5`
+## 功能
 
-## 后端
+- **有据可查的问答**：支持多轮会话和流式回答，展示引用文件与原文片段，并可切换通俗解读或严谨条款风格。
+- **劳动法规知识库**：导入 PDF、DOC、DOCX、TXT 文件，查看导入状态和文本片段；失败的资料可以重新导入。
+- **咨询辅助**：提供材料清单工具、合规提示，并汇总知识库暂未覆盖的问题，便于补充资料。
+- **回答质量评测**：通过预置用例查看回答正确率、拒答率和引用命中情况。
+- **检索策略实验**：比较不同分块、召回数量和重排设置对检索与回答效果的影响。
+- **运行状态检查**：查看 API、数据库、向量索引、Embedding、LLM 配置和旧版 DOC 转换器状态。
 
-首次启动前，在仓库根目录复制配置样例：
+## 工作方式
 
-```sh
-cp .env.example .env
+```mermaid
+flowchart LR
+    User[用户提问] --> Web[Vue 3 前端]
+    Web -->|REST / SSE| API[FastAPI]
+    API --> RAG[RAG 检索与回答]
+    RAG --> SQL[(SQLite\n文档、会话与评测)]
+    RAG --> Index[(FAISS\n法规向量索引)]
+    RAG --> Embedding[本地 BGE 或 Embedding API]
+    RAG --> LLM[OpenAI-compatible LLM API]
 ```
 
-依赖安装：
+## 技术栈
 
-```sh
+| 部分 | 技术 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite、Element Plus、Pinia |
+| 后端 | Python 3.11+、FastAPI、Pydantic |
+| 关系数据与文件 | SQLite、本地文件存储 |
+| 向量检索 | FAISS |
+| 文本向量化 | 本地 `BAAI/bge-small-zh-v1.5`（默认），或 OpenAI-compatible Embedding API |
+| 回答生成 | OpenAI-compatible Chat Completions API |
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.11 或更新版本
+- Node.js 20.19 或更新版本
+- 首次使用本地 BGE 模型时需要网络连接下载模型；也可以配置 Embedding API
+- 配置可用的 LLM API，才能生成问答回复
+
+### 配置后端
+
+在仓库根目录创建本地配置文件并安装依赖：
+
+```bash
+cp .env.example .env
 python3.11 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 ```
 
-安装测试与代码检查依赖：
+编辑根目录 `.env`，至少填写 LLM 服务的三个配置：
 
-```sh
-cd backend
-.venv/bin/python -m pip install -r requirements-dev.txt
+```dotenv
+LLM_API_KEY=你的_API_Key
+LLM_BASE_URL=https://你的服务地址/v1
+LLM_MODEL=你的模型名称
 ```
 
-下载并验证本地 Embedding 模型（首次运行需要网络）：
+默认 Embedding 使用本地 BGE 模型。可在后端目录运行一次编码检查，首次运行也会准备模型缓存：
 
-```sh
+```bash
 cd backend
 .venv/bin/python -m app.scripts.verify_embedding
 ```
 
-`.pdf`、`.docx`、`.txt` 可直接导入；旧版 `.doc` 需要本机安装 LibreOffice。默认上传上限为 20 MB，默认分块大小/重叠分别为 600/100 字符。备用 API Provider 使用 OpenAI-compatible Embeddings 请求：`POST {EMBEDDING_BASE_URL}/embeddings`，请求体包含 `model` 与 `input`；配置 Provider、模型、归一化方式或分块参数变化后，不兼容的 FAISS 索引会被标记并拒绝检索。
+如需使用远程 Embedding，在 `.env` 中设置 `EMBEDDING_PROVIDER=api`，并填写 `EMBEDDING_API_KEY`、`EMBEDDING_BASE_URL` 和 `EMBEDDING_API_MODEL`。完整配置项及默认值见 [`.env.example`](.env.example)。
 
-在线回答需要在仓库根目录 `.env` 中配置 OpenAI-compatible Chat Completions 的 `LLM_API_KEY`、`LLM_BASE_URL`（例如以 `/v1` 结尾）和 `LLM_MODEL`。RAG 默认检索 5 个片段，低于 `RAG_SCORE_THRESHOLD=0.35` 时拒答。可通过 `RERANK_ENABLED=true` 启用本地 `BAAI/bge-reranker-base` 重排；模型未缓存在 Hugging Face 本地缓存或重排失败时会告警并回退向量检索顺序。没有可用 LLM 时，问题改写退回原问题、证据判断失败则安全拒答；若回答生成阶段的模型请求失败，SSE 会发送 `error` 事件。
+### 启动后端
 
-启动 API：
+在一个终端中运行：
 
-```sh
+```bash
 cd backend
 .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-健康检查地址：<http://127.0.0.1:8000/api/health>
+- 后端地址：<http://127.0.0.1:8000>
+- 交互式 API 文档：<http://127.0.0.1:8000/docs>
+- 健康检查：<http://127.0.0.1:8000/api/health>
 
-## 前端
+### 启动前端
 
-```sh
+在另一个终端中运行：
+
+```bash
 cd frontend
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 
-前端默认运行于 <http://127.0.0.1:5173>，首页为 AI 咨询；系统状态和资料管理可从顶部导航进入。
+前端地址：<http://127.0.0.1:5173>
 
-## API 与验收
+## 首次使用
 
-FastAPI 的 `/openapi.json` 是 REST 契约源。启动后端后，在前端目录生成机器维护的 REST 类型：
+项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 文件需要本机安装 LibreOffice。
 
-```sh
-cd frontend
-npm run generate:api-types
+后端启动时会自动初始化 SQLite 数据库，无需手动执行 SQL。默认数据位置如下：
+
+| 内容 | 默认位置 |
+| --- | --- |
+| 本地配置 | 仓库根目录 `.env` |
+| SQLite 数据库 | `data/app.db` |
+| 上传的原始文件 | `uploads/` |
+| 生产向量索引 | `data/faiss/production/` |
+| 检索实验索引 | `data/faiss/experiments/` |
+
+`.env`、上传文件和生成的数据目录已加入 Git 忽略规则；请勿将真实 API Key 提交到仓库。切换 Embedding Provider、模型、归一化方式或分块参数后，现有向量索引可能与新配置不兼容，恢复问答前需要重建索引。
+
+## 项目结构
+
+```text
+backend/
+  app/api/          REST、SSE 接口
+  app/services/     文档处理、问答、检索、评测与实验服务
+  app/repositories/ SQLite 数据访问
+  app/core/         配置、数据库、错误与日志
+  tests/            后端测试
+frontend/
+  src/views/        问答、资料、系统、评测与实验页面
+  src/components/   页面组件
+  src/api/          后端接口客户端
+  tests/            前端测试
+docs/               需求、系统设计与开发文档
+data/               本地数据库与向量索引（运行时生成）
+uploads/             上传的资料（运行时生成）
 ```
 
-SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。已实现文档上传与管理、会话和流式问答、材料清单、缺失知识管理、Phase 8 的 60 条评测和 Phase 9 的检索策略实验。评测用例按 30 条库内单轮、10 条库内多轮、20 条库外/证据不足初始化；新环境需先导入名为 `法条文件.docx` 的项目法规汇编，使期望来源和引用命中检查对应。评测和检索实验通过后台任务执行，前端每 2 秒刷新进度。检索实验会对原始资料重新分块和向量化，FAISS 索引保存在 `data/faiss/experiments`，不会覆盖生产索引。
+## 验证
 
-在后端目录运行验收与静态检查：
+后端检查：
 
-```sh
+```bash
 cd backend
+.venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check app tests
 .venv/bin/ruff format --check app tests
 ```
 
-验收通过后，测试使用进程内 FastAPI TestClient，不会持续占用 HTTP 端口。手动启动的 API 服务可用 `Ctrl+C` 关闭。
+前端检查：
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
+## 进一步阅读
+
+- [产品需求](docs/劳动权益咨询问答台_需求文档v3.md)
+- [系统设计](docs/劳动权益咨询问答台_系统设计与项目开发文档v4.md)
+- [接口设计](docs/devdocs/劳动权益咨询问答台_前后端接口文档_详细设计版_v2.md)
+- [模块设计](docs/devdocs/劳动权益咨询问答台_模块详细设计与功能逻辑_详细设计版_v2.md)
