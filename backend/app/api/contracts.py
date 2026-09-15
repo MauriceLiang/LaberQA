@@ -356,27 +356,53 @@ def get_evaluation_run(id: int) -> ApiResponse[EvaluationRunDetail]:
 @router.get(
     "/missing-knowledge",
     response_model=ApiResponse[PageResult[MissingKnowledgeItem]],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["missing-knowledge"],
     summary="List missing-knowledge topics",
 )
 def list_missing_knowledge(
     query: Annotated[MissingKnowledgeQuery, Query()],
+    service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ApiResponse[PageResult[MissingKnowledgeItem]]:
-    _contract_only()
+    items, total = service.list_missing_knowledge(query)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=PageResult(
+            items=[
+                MissingKnowledgeItem.model_validate(
+                    _schema_fields(MissingKnowledgeItem, item)
+                )
+                for item in items
+            ],
+            page=query.page,
+            size=query.size,
+            total=total,
+            pages=(total + query.size - 1) // query.size,
+        ),
+    )
 
 
 @router.patch(
     "/missing-knowledge/{id}",
     response_model=ApiResponse[MissingKnowledgeItem],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["missing-knowledge"],
     summary="Update a missing-knowledge topic",
 )
 def update_missing_knowledge(
-    id: int, payload: MissingKnowledgeUpdate
+    id: int,
+    payload: MissingKnowledgeUpdate,
+    service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ApiResponse[MissingKnowledgeItem]:
-    _contract_only()
+    item = service.update_missing_knowledge(id, payload)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=MissingKnowledgeItem.model_validate(
+            _schema_fields(MissingKnowledgeItem, item)
+        ),
+    )
 
 
 @router.get(

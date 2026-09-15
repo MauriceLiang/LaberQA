@@ -2353,15 +2353,6 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
-            /** @description Business implementation is scheduled for a later phase */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
-                };
-            };
             /** @description A required service is unavailable */
             503: {
                 headers: {
@@ -2444,15 +2435,6 @@ export interface operations {
             };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
-                };
-            };
-            /** @description Business implementation is scheduled for a later phase */
-            501: {
                 headers: {
                     [name: string]: unknown;
                 };

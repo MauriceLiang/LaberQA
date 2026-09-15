@@ -10,8 +10,9 @@
         <RouterLink to="/">AI 咨询</RouterLink>
         <RouterLink to="/system">系统状态</RouterLink>
         <RouterLink to="/documents">资料管理</RouterLink>
+        <RouterLink to="/missing-knowledge">知识缺口</RouterLink>
       </nav>
-      <el-tag type="success" effect="plain">Phase 6</el-tag>
+      <el-tag type="success" effect="plain">Phase 7</el-tag>
     </el-header>
     <el-main class="app-main">
       <router-view />
