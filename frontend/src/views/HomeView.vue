@@ -13,10 +13,10 @@ onMounted(() => {
 <template>
   <section class="welcome-card">
     <div>
-      <p class="eyebrow">项目初始化</p>
-      <h2>前后端骨架已就绪</h2>
+      <p class="eyebrow">系统运行状态</p>
+      <h2>后端服务健康检查</h2>
       <p class="welcome-copy">
-        这里会逐步接入法规资料管理、知识库检索和有来源依据的劳动权益问答。
+        查看 API、数据库、向量索引与模型的运行状态。资料管理页面可导入法规和政策资料。
       </p>
     </div>
     <el-button type="primary" :loading="system.loading" @click="system.refreshHealth">
