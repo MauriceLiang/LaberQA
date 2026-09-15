@@ -184,6 +184,18 @@ class DocumentRepository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def list_success_documents(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, file_name, file_type, file_path
+                FROM document
+                WHERE status = 'SUCCESS'
+                ORDER BY id
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(str(self.database_path), timeout=5)
