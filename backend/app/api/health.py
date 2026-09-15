@@ -30,7 +30,7 @@ def get_health() -> ApiResponse[HealthData]:
             doc_converter="ready" if converter_ready else "unavailable",
             llm_configured=bool(settings.llm_api_key),
             embedding_provider=settings.embedding_provider,
-            embedding_model=settings.local_embedding_model,
+            embedding_model=settings.embedding_model,
             embedding_ready=embedding_ready,
             embedding_index_compatible=not index_exists,
         ),

@@ -49,3 +49,16 @@ npm run dev
 ```
 
 前端默认运行于 <http://127.0.0.1:5173>，启动后会调用后端 `/api/health` 显示服务状态。
+
+## Phase 1 接口契约
+
+FastAPI 的 `/openapi.json` 是 REST 契约源。启动后端后，在前端目录生成机器维护的 REST 类型：
+
+```sh
+cd frontend
+npm run generate:api-types
+```
+
+SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。Phase 1 的业务路由只发布请求/响应契约，尚未实现的业务操作会返回 HTTP 501；后续阶段逐步接入真实服务。
+
+Phase 1 已冻结 Embedding 配置与 `EmbeddingSignature`/`IndexMeta` 数据结构。Provider 切换和 FAISS 元数据兼容校验按开发流程拆解安排在 Phase 2（BE-DOC-08～11）；在该阶段完成前，设置 `EMBEDDING_PROVIDER=api` 时向量编码会明确报错，不会回退到本地模型。
