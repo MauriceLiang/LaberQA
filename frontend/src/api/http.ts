@@ -21,7 +21,14 @@ export class ApiError extends Error {
   }
 }
 
-const http = axios.create({
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message
+  if (axios.isAxiosError(error) && !error.response) return '无法连接后端，请检查服务是否已启动'
+  if (error instanceof Error) return error.message
+  return '请求失败，请稍后重试'
+}
+
+export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api',
   timeout: 8000,
 })

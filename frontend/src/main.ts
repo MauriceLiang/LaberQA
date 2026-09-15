@@ -9,6 +9,7 @@ import {
   ElDescriptionsItem,
   ElEmpty,
   ElHeader,
+  ElLoadingDirective,
   ElMain,
   ElSkeleton,
   ElTag,
@@ -33,4 +34,5 @@ app.use(ElHeader)
 app.use(ElMain)
 app.use(ElSkeleton)
 app.use(ElTag)
+app.directive('loading', ElLoadingDirective)
 app.mount('#app')
