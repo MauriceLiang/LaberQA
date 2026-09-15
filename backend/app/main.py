@@ -15,6 +15,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
+from app.services.evaluation_service import EvaluationService
 from app.services.retrieval import RetrievalService
 from app.services.session_service import SessionService
 
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
     app.state.document_service = document_service
     session_service = SessionService(database_path=settings.database_path)
     app.state.session_service = session_service
-    app.state.chat_service = ChatService(
+    chat_service = ChatService(
         session_service,
         RetrievalService(
             settings,
@@ -40,6 +41,10 @@ async def lifespan(app: FastAPI):
         ),
         settings,
     )
+    app.state.chat_service = chat_service
+    evaluation_service = EvaluationService(chat_service, settings)
+    evaluation_service.initialize()
+    app.state.evaluation_service = evaluation_service
     logger.info("Application startup complete")
     yield
 

@@ -35,7 +35,9 @@ def test_llm_client_reads_openai_compatible_completion_and_sse_tokens() -> None:
         )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             llm = LlmClient(config, client=client)
-            completion = await llm.complete([{"role": "user", "content": "rewrite"}])
+            completion = await llm.complete(
+                [{"role": "user", "content": "rewrite"}], temperature=0
+            )
             tokens = [
                 token
                 async for token in llm.stream([{"role": "user", "content": "answer"}])
@@ -51,6 +53,7 @@ def test_llm_client_reads_openai_compatible_completion_and_sse_tokens() -> None:
     assert all(
         request.headers["authorization"] == "Bearer test-key" for request in requests
     )
+    assert json.loads(requests[0].content)["temperature"] == 0
 
 
 def test_llm_client_requires_all_runtime_configuration() -> None:

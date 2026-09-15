@@ -70,6 +70,13 @@ class Phase1ContractTests(unittest.TestCase):
             ("/api/missing-knowledge/{id}", "patch"),
         ):
             self.assertNotIn("501", schema["paths"][path][method]["responses"])
+        for path, method in (
+            ("/api/evaluations/cases", "get"),
+            ("/api/evaluations/runs", "post"),
+            ("/api/evaluations/runs", "get"),
+            ("/api/evaluations/runs/{id}", "get"),
+        ):
+            self.assertNotIn("501", schema["paths"][path][method]["responses"])
 
     def test_validation_uses_envelope_and_exposes_request_id(self) -> None:
         with TestClient(app) as client:

@@ -33,7 +33,11 @@ class LlmClient:
         return f"{base_url}/chat/completions"
 
     async def complete(
-        self, messages: Sequence[Mapping[str, str]], *, json_mode: bool = False
+        self,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        json_mode: bool = False,
+        temperature: float | None = None,
     ) -> str:
         self._ensure_configured()
         payload: dict[str, Any] = {
@@ -43,6 +47,8 @@ class LlmClient:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if temperature is not None:
+            payload["temperature"] = temperature
         try:
             if self._client is None:
                 async with httpx.AsyncClient(timeout=60.0) as client:

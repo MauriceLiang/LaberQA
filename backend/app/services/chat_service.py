@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.schemas.contracts import (
+    AnswerStyle,
     ChatRequest,
     MaterialChecklistInput,
     MissingKnowledgeQuery,
@@ -228,7 +230,7 @@ class ChatService:
                 yield _sse("tool", execution.model_dump(mode="json"))
 
             messages = self._answer_messages(
-                payload,
+                payload.answer_style,
                 question,
                 rewritten_question,
                 evidence,
@@ -314,6 +316,72 @@ class ChatService:
             },
         )
 
+    async def answer_once(
+        self,
+        question: str,
+        history: list[dict[str, Any]],
+        answer_style: AnswerStyle,
+        *,
+        mode: ExecutionMode,
+    ) -> dict[str, Any]:
+        """Run the production RAG decision path without persisting chat state."""
+        if mode not in (ExecutionMode.EVALUATION, ExecutionMode.EXPERIMENT):
+            raise ValueError("answer_once only supports non-production modes")
+
+        rewritten_question = await self._rewrite_question(history, question)
+        retrieval_started = perf_counter()
+        evidence = self.retrieval_service.retrieve(rewritten_question)
+        retrieval_ms = round((perf_counter() - retrieval_started) * 1000)
+        refused, _ = await self._judge_evidence(
+            rewritten_question, evidence, strict=True
+        )
+        if refused:
+            return {
+                "answer": _REFUSAL,
+                "refused": True,
+                "citations": [],
+                "rewritten_question": rewritten_question,
+                "retrieval_ms": retrieval_ms,
+                "compliance_shown": False,
+            }
+
+        tool_execution = self.tool_decision_service.decide(question, rewritten_question)
+        tool_result = (
+            self.material_checklist_tool.execute(tool_execution)
+            if tool_execution is not None
+            else None
+        )
+        compliance_required = self.compliance_rule_service.requires_notice(
+            question, rewritten_question
+        )
+        messages = self._answer_messages(
+            answer_style,
+            question,
+            rewritten_question,
+            evidence,
+            compliance_required,
+            tool_result,
+        )
+        answer = (await self.llm_client.complete(messages)).strip()
+        if not answer:
+            raise ModelUnavailableError("模型未返回回答内容")
+        compliance_required = (
+            compliance_required
+            or self.compliance_rule_service.requires_notice(
+                question, rewritten_question, answer
+            )
+        )
+        if compliance_required and COMPLIANCE_NOTICE not in answer:
+            answer = f"{answer}\n\n{COMPLIANCE_NOTICE}"
+        return {
+            "answer": answer,
+            "refused": False,
+            "citations": evidence,
+            "rewritten_question": rewritten_question,
+            "retrieval_ms": retrieval_ms,
+            "compliance_shown": COMPLIANCE_NOTICE in answer,
+        }
+
     async def _rewrite_question(
         self, history: list[dict[str, Any]], question: str
     ) -> str:
@@ -345,7 +413,11 @@ class ChatService:
             return question
 
     async def _judge_evidence(
-        self, question: str, evidence: list[dict[str, Any]]
+        self,
+        question: str,
+        evidence: list[dict[str, Any]],
+        *,
+        strict: bool = False,
     ) -> tuple[bool, MissingKnowledgeReason | None]:
         if not evidence:
             return True, MissingKnowledgeReason.NO_RETRIEVAL_RESULT
@@ -376,13 +448,18 @@ class ChatService:
             if not judgement["sufficient"]:
                 return True, MissingKnowledgeReason.INSUFFICIENT_EVIDENCE
             return False, None
+        except ModelUnavailableError:
+            if strict:
+                raise
+            logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
+            return True, None
         except Exception:
             logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
             return True, None
 
     @staticmethod
     def _answer_messages(
-        payload: ChatRequest,
+        answer_style: AnswerStyle,
         question: str,
         rewritten_question: str,
         evidence: list[dict[str, Any]],
@@ -396,9 +473,9 @@ class ChatService:
             else "当前规则未要求固定提示；回答仍须遵守证据约束。"
         )
         replacements = {
-            "{{answer_style}}": payload.answer_style.value,
+            "{{answer_style}}": answer_style.value,
             "{{answer_style_instructions}}": _ANSWER_STYLE_INSTRUCTIONS[
-                payload.answer_style.value
+                answer_style.value
             ],
             "{{compliance_required}}": str(compliance_required).lower(),
             "{{compliance_instruction}}": compliance_instruction,

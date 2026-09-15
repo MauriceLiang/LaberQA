@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS evaluation_result (
     UNIQUE (run_id, case_id)
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_run_case (
+    run_id INTEGER NOT NULL REFERENCES evaluation_run(id) ON DELETE CASCADE,
+    case_id INTEGER NOT NULL REFERENCES evaluation_case(id),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    PRIMARY KEY (run_id, case_id),
+    UNIQUE (run_id, position)
+);
+
 CREATE TABLE IF NOT EXISTS missing_knowledge (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     topic_key VARCHAR(100) NOT NULL UNIQUE,
