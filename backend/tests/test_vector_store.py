@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
+from app.schemas.contracts import EmbeddingSignature
 from app.services import vector_store as vector_store_module
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -13,11 +14,20 @@ from app.services.vector_store import (
 )
 
 
-def make_config(model: str = "test-embedding-model") -> Settings:
+def make_config(
+    model: str = "test-embedding-model",
+    *,
+    provider: str = "local",
+    normalize: bool = True,
+) -> Settings:
     return Settings(
         _env_file=None,
         local_embedding_model=model,
-        embedding_provider="local",
+        embedding_provider=provider,
+        embedding_api_key="test-key" if provider == "api" else "",
+        embedding_base_url="https://example.test/v1" if provider == "api" else "",
+        embedding_api_model=model if provider == "api" else "",
+        embedding_normalize=normalize,
         faiss_dir=Path("/unused-by-explicit-index-dir"),
     )
 
@@ -63,6 +73,68 @@ def test_signature_mismatch_is_exposed_instead_of_loading_index(
     reloaded = VectorStoreService(make_config(), index_dir=index_dir)
     assert reloaded.load() is True
     assert reloaded.search([1.0, 0.0], 10) == [(1, 1.0)]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        make_config(provider="api"),
+        make_config(normalize=False),
+    ],
+    ids=["provider", "normalization"],
+)
+def test_provider_or_normalization_change_rejects_old_index(
+    tmp_path: Path, config: Settings
+) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+
+    incompatible = VectorStoreService(config, index_dir=index_dir)
+    with pytest.raises(VectorStoreSignatureMismatch):
+        incompatible.load()
+    assert incompatible.status == "incompatible"
+
+
+def test_dimension_change_rejects_old_index(tmp_path: Path) -> None:
+    class DimensionThreeEmbedding:
+        def signature(self, dimension: int | None = None) -> EmbeddingSignature:
+            return EmbeddingSignature(
+                embedding_provider="local",
+                embedding_model="test-embedding-model",
+                embedding_dimension=3,
+                normalize_embeddings=True,
+            )
+
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+
+    incompatible = VectorStoreService(
+        make_config(),
+        embedding_service=DimensionThreeEmbedding(),
+        index_dir=index_dir,
+    )
+    with pytest.raises(VectorStoreSignatureMismatch):
+        incompatible.load()
+
+
+def test_changed_model_requires_full_rebuild_before_old_index_can_load(
+    tmp_path: Path,
+) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+
+    changed = VectorStoreService(make_config("changed-model"), index_dir=index_dir)
+    with pytest.raises(VectorStoreSignatureMismatch):
+        changed.load()
+
+    assert changed.rebuild_from_success_chunks([(2, [0.0, 1.0])]) is True
+    assert changed.search([0.0, 1.0], 10) == [(2, 1.0)]
+    assert (
+        VectorStoreService(make_config("changed-model"), index_dir=index_dir).load()
+        is True
+    )
+    with pytest.raises(VectorStoreSignatureMismatch):
+        VectorStoreService(make_config(), index_dir=index_dir).load()
 
 
 def test_query_dimension_mismatch_and_empty_rebuild(tmp_path: Path) -> None:

@@ -1,15 +1,21 @@
 import json
+import os
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import httpx
+import pytest
 
-from app.core.config import Settings
+from app.core.config import Settings, settings
 from app.services.embedding import (
     ApiEmbeddingProvider,
     EmbeddingService,
     EmbeddingUnavailableError,
     LocalEmbeddingProvider,
+    local_embedding_is_cached,
 )
+from app.services.vector_store import VectorStoreService
 
 
 class ApiEmbeddingProviderTests(unittest.TestCase):
@@ -87,7 +93,7 @@ class LocalEmbeddingProviderTests(unittest.TestCase):
             def tolist(self) -> list[list[float]]:
                 return list(self)
 
-        with unittest.mock.patch(
+        with patch(
             "app.services.embedding._load_model", return_value=Model()
         ):
             config = Settings(
@@ -109,6 +115,47 @@ class LocalEmbeddingProviderTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "不能为空"):
             service.embed_query("  ")
+
+
+@pytest.mark.skipif(
+    os.getenv("LABERQA_RUN_LOCAL_BGE_INTEGRATION") != "1",
+    reason="requires a compatible local BGE and FAISS/Torch OpenMP runtime",
+)
+def test_cached_bge_embeddings_round_trip_through_faiss(tmp_path: Path) -> None:
+    if not local_embedding_is_cached():
+        pytest.skip("local BGE model is not cached")
+
+    config = Settings(
+        _env_file=None,
+        local_embedding_model=settings.local_embedding_model,
+        local_embedding_device="cpu",
+        embedding_batch_size=32,
+        embedding_normalize=True,
+        faiss_dir=tmp_path / "faiss",
+    )
+    embedding = EmbeddingService(config)
+    texts = [
+        "劳动者工资应当按月足额支付，用人单位拖欠工资的，应当依法处理。",
+        "劳动者依法享有带薪年休假，用人单位应安排休假。",
+    ]
+    vectors = embedding.embed_documents(texts)
+    query = embedding.embed_query("用人单位拖欠劳动者工资怎么办？")
+    store = VectorStoreService(
+        config,
+        embedding_service=embedding,
+        index_dir=tmp_path / "faiss" / "production",
+    )
+    store.add(list(zip((1, 2), vectors, strict=True)))
+
+    assert len(query) == len(vectors[0]) == 512
+    assert store.search(query, 2)[0][0] == 1
+
+    reloaded = VectorStoreService(
+        config,
+        embedding_service=embedding,
+        index_dir=tmp_path / "faiss" / "production",
+    )
+    assert reloaded.load() is True
 
 
 if __name__ == "__main__":
