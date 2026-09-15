@@ -5,8 +5,10 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_chat_service
 from app.core.config import Settings, settings
+from app.core.database import initialize_database
 from app.main import app
 from app.services.chat_service import ChatService
+from app.services.missing_knowledge import MissingKnowledgeReason
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
 
@@ -128,3 +130,64 @@ def test_material_checklist_route_returns_shared_tool_execution_contract() -> No
             "post"
         ]["responses"]
         assert "501" not in tool_responses
+
+
+def test_missing_knowledge_routes_list_filter_and_update_records() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "missing-api.db"
+        original_values = (
+            settings.database_url,
+            settings.faiss_dir,
+            settings.upload_dir,
+        )
+        settings.database_url = f"sqlite:///{database_path}"
+        settings.faiss_dir = Path(directory) / "faiss"
+        settings.upload_dir = Path(directory) / "uploads"
+        initialize_database()
+        chat_service = ChatService(
+            SessionService(database_path=database_path),
+            UnreadyRetrieval(),
+            Settings(database_url=f"sqlite:///{database_path}"),
+        )
+        chat_service.missing_knowledge_service.record_refusal(
+            "单位拖欠工资怎么办？", MissingKnowledgeReason.NO_RETRIEVAL_RESULT
+        )
+        app.dependency_overrides[get_chat_service] = lambda: chat_service
+
+        try:
+            with TestClient(app) as client:
+                pending = client.get(
+                    "/api/missing-knowledge",
+                    params={
+                        "status": "PENDING",
+                        "keyword": "工资",
+                        "sort": "count_desc",
+                    },
+                )
+                updated = client.patch(
+                    "/api/missing-knowledge/1",
+                    json={"status": "RESOLVED", "note": "补充工资支付资料"},
+                )
+                resolved = client.get(
+                    "/api/missing-knowledge", params={"status": "RESOLVED"}
+                )
+                missing = client.patch(
+                    "/api/missing-knowledge/999",
+                    json={"status": "IGNORED", "note": None},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chat_service, None)
+            (
+                settings.database_url,
+                settings.faiss_dir,
+                settings.upload_dir,
+            ) = original_values
+
+        assert pending.status_code == 200
+        assert pending.json()["data"]["total"] == 1
+        assert pending.json()["data"]["items"][0]["topic_key"] == "wage_payment"
+        assert updated.status_code == 200
+        assert updated.json()["data"]["note"] == "补充工资支付资料"
+        assert resolved.json()["data"]["items"][0]["status"] == "RESOLVED"
+        assert missing.status_code == 404
+        assert missing.json()["code"] == 40405

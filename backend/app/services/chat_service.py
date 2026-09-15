@@ -13,11 +13,22 @@ from fastapi import Request
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
-from app.schemas.contracts import ChatRequest, MaterialChecklistInput, ToolExecutionItem
+from app.schemas.contracts import (
+    ChatRequest,
+    MaterialChecklistInput,
+    MissingKnowledgeQuery,
+    MissingKnowledgeUpdate,
+    ToolExecutionItem,
+)
 from app.services.compliance import COMPLIANCE_NOTICE, ComplianceRuleService
 from app.services.embedding import EmbeddingUnavailableError
 from app.services.llm import LlmClient, ModelUnavailableError
 from app.services.material_checklist import MaterialChecklistTool, ToolDecisionService
+from app.services.missing_knowledge import (
+    ExecutionMode,
+    MissingKnowledgeReason,
+    MissingKnowledgeService,
+)
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -44,6 +55,7 @@ class ChatService:
         config: Settings = settings,
         *,
         llm_client: LlmClient | None = None,
+        missing_knowledge_service: MissingKnowledgeService | None = None,
     ) -> None:
         self.session_service = session_service
         self.retrieval_service = retrieval_service
@@ -52,6 +64,9 @@ class ChatService:
         self.tool_decision_service = ToolDecisionService()
         self.material_checklist_tool = MaterialChecklistTool()
         self.compliance_rule_service = ComplianceRuleService()
+        self.missing_knowledge_service = missing_knowledge_service or (
+            MissingKnowledgeService(database_path=config.database_path)
+        )
 
     def create_session(self, title: str | None) -> dict[str, Any]:
         return self.session_service.create_session(title)
@@ -67,7 +82,25 @@ class ChatService:
     ) -> ToolExecutionItem:
         return self.material_checklist_tool.execute(payload)
 
-    async def stream_chat(self, payload: ChatRequest, request: Request):
+    def list_missing_knowledge(
+        self, query: MissingKnowledgeQuery
+    ) -> tuple[list[dict[str, Any]], int]:
+        return self.missing_knowledge_service.list(query)
+
+    def update_missing_knowledge(
+        self, item_id: int, payload: MissingKnowledgeUpdate
+    ) -> dict[str, Any]:
+        return self.missing_knowledge_service.update(item_id, payload)
+
+    async def stream_chat(
+        self,
+        payload: ChatRequest,
+        request: Request,
+        *,
+        execution_mode: ExecutionMode = ExecutionMode.PRODUCTION,
+    ):
+        if execution_mode != ExecutionMode.PRODUCTION:
+            raise ValueError("stream_chat only supports PRODUCTION mode")
         session_id = payload.session_id
         question = payload.question
         try:
@@ -145,9 +178,17 @@ class ChatService:
             )
             return
 
-        refused = await self._should_refuse(rewritten_question, evidence)
+        refused, refusal_reason = await self._judge_evidence(
+            rewritten_question, evidence
+        )
         if await request.is_disconnected():
             return
+
+        record_missing_knowledge = (
+            refused
+            and refusal_reason is not None
+            and execution_mode == ExecutionMode.PRODUCTION
+        )
 
         compliance_required = self.compliance_rule_service.requires_notice(
             question, rewritten_question
@@ -157,6 +198,15 @@ class ChatService:
         if refused:
             answer_parts.append(_REFUSAL)
             yield _sse("token", {"content": _REFUSAL})
+            if record_missing_knowledge and refusal_reason is not None:
+                try:
+                    self.missing_knowledge_service.record_refusal(
+                        rewritten_question, refusal_reason
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to record a production evidence-gate refusal",
+                    )
         else:
             tool_input = self.tool_decision_service.decide(question, rewritten_question)
             if tool_input is not None:
@@ -294,15 +344,16 @@ class ChatService:
             )
             return question
 
-    async def _should_refuse(
+    async def _judge_evidence(
         self, question: str, evidence: list[dict[str, Any]]
-    ) -> bool:
+    ) -> tuple[bool, MissingKnowledgeReason | None]:
+        if not evidence:
+            return True, MissingKnowledgeReason.NO_RETRIEVAL_RESULT
         if (
-            not evidence
-            or max(item["retrieval_score"] for item in evidence)
+            max(item["retrieval_score"] for item in evidence)
             < self.config.rag_score_threshold
         ):
-            return True
+            return True, MissingKnowledgeReason.LOW_RELEVANCE
 
         prompt = (_PROMPT_DIR / "evidence_judge.txt").read_text(encoding="utf-8")
         try:
@@ -320,13 +371,14 @@ class ChatService:
                 json_mode=True,
             )
             judgement = json.loads(result)
-            return (
-                not isinstance(judgement.get("sufficient"), bool)
-                or not judgement["sufficient"]
-            )
+            if not isinstance(judgement.get("sufficient"), bool):
+                return True, None
+            if not judgement["sufficient"]:
+                return True, MissingKnowledgeReason.INSUFFICIENT_EVIDENCE
+            return False, None
         except Exception:
             logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
-            return True
+            return True, None
 
     @staticmethod
     def _answer_messages(

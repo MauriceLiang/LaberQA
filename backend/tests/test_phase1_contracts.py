@@ -66,6 +66,8 @@ class Phase1ContractTests(unittest.TestCase):
             ("/api/sessions", "post"),
             ("/api/sessions/{id}/messages", "get"),
             ("/api/chat/stream", "post"),
+            ("/api/missing-knowledge", "get"),
+            ("/api/missing-knowledge/{id}", "patch"),
         ):
             self.assertNotIn("501", schema["paths"][path][method]["responses"])
 

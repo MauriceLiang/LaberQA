@@ -4,12 +4,14 @@ import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 from uuid import UUID
 
 from app.core.config import Settings
-from app.schemas.contracts import ChatRequest
+from app.schemas.contracts import ChatRequest, MissingKnowledgeQuery
 from app.services.chat_service import ChatService
 from app.services.compliance import COMPLIANCE_NOTICE
+from app.services.missing_knowledge import ExecutionMode, MissingKnowledgeReason
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
 
@@ -115,13 +117,20 @@ def _events(
     *,
     question: str = "那公司这样解除劳动关系呢？",
     answer_style: str = "plain",
+    execution_mode: ExecutionMode = ExecutionMode.PRODUCTION,
 ):
     payload = ChatRequest(
         session_id=UUID(session_id),
         question=question,
         answer_style=answer_style,
     )
-    return asyncio.run(_collect(service.stream_chat(payload, request or FakeRequest())))
+    return asyncio.run(
+        _collect(
+            service.stream_chat(
+                payload, request or FakeRequest(), execution_mode=execution_mode
+            )
+        )
+    )
 
 
 async def _collect(stream):
@@ -153,6 +162,8 @@ def test_rag_stream_persists_answer_and_only_retrieved_citations() -> None:
 def test_low_similarity_evidence_is_refused_without_calling_model() -> None:
     with tempfile.TemporaryDirectory() as directory:
         service, sessions, _, llm = _service(directory, score=0.1)
+        record = Mock(wraps=service.missing_knowledge_service.record_refusal)
+        service.missing_knowledge_service.record_refusal = record
         session = sessions.create_session()
 
         events = _events(service, session["id"])
@@ -162,9 +173,101 @@ def test_low_similarity_evidence_is_refused_without_calling_model() -> None:
         assert '"items":[]' in events[1]
         assert '"refused":true' in events[2]
         assert llm.completions == []
+        rows, total = service.missing_knowledge_service.list(MissingKnowledgeQuery())
+        assert total == 1
+        assert rows[0]["topic_key"] == "termination"
+        assert rows[0]["count"] == 1
+        assert record.call_args.args[1] is MissingKnowledgeReason.LOW_RELEVANCE
         messages = sessions.list_messages(session["id"])
         assert messages[-1]["refused"] is True
         assert messages[-1]["citations"] == []
+
+
+def test_empty_retrieval_result_is_recorded_with_its_evidence_reason() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, retrieval, _ = _service(directory)
+        retrieval.evidence = []
+        record = Mock(wraps=service.missing_knowledge_service.record_refusal)
+        service.missing_knowledge_service.record_refusal = record
+        session = sessions.create_session()
+
+        _events(service, session["id"], question="劳动关系解除后能否获得补偿？")
+
+        assert record.call_args.args[1].value == "NO_RETRIEVAL_RESULT"
+
+
+def test_insufficient_evidence_judgement_is_recorded() -> None:
+    class InsufficientJudge(FakeLlm):
+        async def complete(
+            self, messages: list[dict[str, str]], *, json_mode: bool = False
+        ) -> str:
+            return '{"sufficient":false,"reason":"not supported"}'
+
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory)
+        service.llm_client = InsufficientJudge()
+        record = Mock(wraps=service.missing_knowledge_service.record_refusal)
+        service.missing_knowledge_service.record_refusal = record
+        session = sessions.create_session()
+
+        _events(service, session["id"], question="劳动关系解除后能否获得补偿？")
+
+        assert record.call_args.args[1].value == "INSUFFICIENT_EVIDENCE"
+
+
+def test_failure_to_record_does_not_break_refusal_stream() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory, score=0.1)
+        session = sessions.create_session()
+
+        def fail_record(*_args, **_kwargs):
+            raise RuntimeError("database unavailable")
+
+        service.missing_knowledge_service.record_refusal = fail_record
+        events = _events(service, session["id"])
+
+        assert events[0].startswith("event: token")
+        assert '"refused":true' in events[-1]
+
+
+def test_evidence_judge_failure_refuses_without_recording_missing_knowledge() -> None:
+    class BrokenJudge(FakeLlm):
+        async def complete(
+            self, messages: list[dict[str, str]], *, json_mode: bool = False
+        ) -> str:
+            raise RuntimeError("judge unavailable")
+
+    with tempfile.TemporaryDirectory() as directory:
+        service, sessions, _, _ = _service(directory)
+        service.llm_client = BrokenJudge()
+        session = sessions.create_session()
+
+        events = _events(service, session["id"])
+        rows, total = service.missing_knowledge_service.list(MissingKnowledgeQuery())
+
+        assert '"refused":true' in events[-1]
+        assert total == 0
+        assert rows == []
+
+
+def test_non_production_refusal_does_not_record_missing_knowledge() -> None:
+    for mode in (ExecutionMode.EVALUATION, ExecutionMode.EXPERIMENT):
+        with tempfile.TemporaryDirectory() as directory:
+            service, sessions, _, _ = _service(directory, score=0.1)
+            session = sessions.create_session()
+
+            try:
+                _events(service, session["id"], execution_mode=mode)
+            except ValueError as error:
+                assert str(error) == "stream_chat only supports PRODUCTION mode"
+            else:
+                raise AssertionError(
+                    "Expected non-production stream mode to be rejected"
+                )
+            _, total = service.missing_knowledge_service.list(MissingKnowledgeQuery())
+
+            assert total == 0
+            assert sessions.list_messages(session["id"]) == []
 
 
 def test_recent_session_turns_are_used_to_rewrite_the_retrieval_query() -> None:
