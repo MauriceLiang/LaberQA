@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
+    rag_top_k: int = Field(default=5, ge=1, le=20)
+    rag_score_threshold: float = Field(default=0.35, ge=0, le=1)
+    rerank_enabled: bool = False
+    rerank_top_n: int = Field(default=5, ge=1, le=20)
+    default_answer_style: Literal["plain", "legal"] = "plain"
     embedding_provider: Literal["local", "api"] = "local"
     local_embedding_model: str = "BAAI/bge-small-zh-v1.5"
     local_embedding_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
@@ -41,6 +46,8 @@ class Settings(BaseSettings):
     def require_api_embedding_settings(self) -> "Settings":
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE")
+        if self.rerank_enabled and self.rerank_top_n > self.rag_top_k:
+            raise ValueError("RERANK_TOP_N must be less than or equal to RAG_TOP_K")
         if self.embedding_provider == "api" and not all(
             (self.embedding_api_key, self.embedding_base_url, self.embedding_api_model)
         ):

@@ -1,10 +1,18 @@
 from typing import Annotated, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_document_service
+from app.api.dependencies import get_chat_service, get_document_service
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.schemas.common import ApiResponse, PageQuery, PageResult
@@ -36,6 +44,7 @@ from app.schemas.contracts import (
     SessionItem,
     ToolExecutionItem,
 )
+from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
 
 router = APIRouter()
@@ -53,6 +62,9 @@ CONTRACT_RESPONSES = {
         "description": "Business implementation is scheduled for a later phase",
     },
     503: {**_ERROR_RESPONSE, "description": "A required service is unavailable"},
+}
+IMPLEMENTED_RESPONSES = {
+    status: response for status, response in CONTRACT_RESPONSES.items() if status != 501
 }
 
 
@@ -205,23 +217,41 @@ def _schema_fields(model: type, source: dict) -> dict:
     "/sessions",
     response_model=ApiResponse[SessionItem],
     status_code=201,
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["sessions"],
     summary="Create a chat session",
 )
-def create_session(payload: CreateSessionRequest) -> ApiResponse[SessionItem]:
-    _contract_only()
+def create_session(
+    payload: CreateSessionRequest,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> ApiResponse[SessionItem]:
+    session = service.create_session(payload.title)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=SessionItem.model_validate(session),
+    )
 
 
 @router.get(
     "/sessions/{id}/messages",
     response_model=ApiResponse[list[MessageItem]],
-    responses=CONTRACT_RESPONSES,
+    responses=IMPLEMENTED_RESPONSES,
     tags=["sessions"],
     summary="List messages for a session",
 )
-def list_session_messages(id: UUID) -> ApiResponse[list[MessageItem]]:
-    _contract_only()
+def list_session_messages(
+    id: UUID,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> ApiResponse[list[MessageItem]]:
+    if service.get_session(id) is None:
+        raise AppError(ErrorCode.SESSION_NOT_FOUND, "会话不存在", http_status=404)
+    messages = service.list_messages(id)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=[MessageItem.model_validate(message) for message in messages],
+    )
 
 
 @router.post(
@@ -235,13 +265,23 @@ def list_session_messages(id: UUID) -> ApiResponse[list[MessageItem]]:
             ),
             "content": {"text/event-stream": {"schema": {"type": "string"}}},
         },
-        **CONTRACT_RESPONSES,
+        **IMPLEMENTED_RESPONSES,
     },
     tags=["chat"],
     summary="Stream a RAG answer using Server-Sent Events",
 )
-async def stream_chat(payload: ChatRequest) -> StreamingResponse:
-    _contract_only()
+async def stream_chat(
+    payload: ChatRequest,
+    request: Request,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> StreamingResponse:
+    if service.get_session(payload.session_id) is None:
+        raise AppError(ErrorCode.SESSION_NOT_FOUND, "会话不存在", http_status=404)
+    return StreamingResponse(
+        service.stream_chat(payload, request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
