@@ -1,0 +1,157 @@
+from typing import Any
+
+import pytest
+
+from app.core.config import Settings
+from app.services.rerank import RerankService
+from app.services.retrieval import RetrievalService
+from app.services.vector_store import VectorStoreNotInitialized
+
+
+class FakeEmbedding:
+    def embed_query(self, query: str) -> list[float]:
+        self.query = query
+        return [0.1, 0.2]
+
+
+class UnreadyVectorStore:
+    status = "not_initialized"
+
+
+class FailingEmbedding:
+    def embed_query(self, query: str) -> list[float]:
+        raise AssertionError("embedding should not run without an index")
+
+
+class FakeVectorStore:
+    status = "ready"
+
+    def __init__(self) -> None:
+        self.query_vector: list[float] | None = None
+        self.top_k: int | None = None
+
+    def search(self, query_vector: list[float], top_k: int) -> list[tuple[int, float]]:
+        self.query_vector = query_vector
+        self.top_k = top_k
+        return [(2, 0.91), (99, 0.88), (1, 0.72), (2, 0.61)]
+
+
+class FakeRepository:
+    def list_success_chunks(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 1,
+                "document_id": 8,
+                "file_name": "劳动法.txt",
+                "chunk_no": 1,
+                "content": "证据一",
+            },
+            {
+                "id": 2,
+                "document_id": 9,
+                "file_name": "劳动合同法.pdf",
+                "chunk_no": 3,
+                "content": "证据二",
+            },
+        ]
+
+
+class FakeCrossEncoder:
+    def __init__(self, scores: list[float]) -> None:
+        self.scores = scores
+        self.pairs: list[tuple[str, str]] = []
+
+    def predict(self, sentences: list[tuple[str, str]]) -> list[float]:
+        self.pairs = sentences
+        return self.scores
+
+
+def test_retrieval_maps_only_successful_chunks_and_preserves_faiss_order() -> None:
+    config = Settings(database_url="sqlite:////tmp/retrieval-test.db", rag_top_k=4)
+    embedding = FakeEmbedding()
+    vector_store = FakeVectorStore()
+    service = RetrievalService(
+        config,
+        repository=FakeRepository(),
+        embedding_service=embedding,
+        vector_store=vector_store,
+    )
+
+    evidence = service.retrieve("测试问题")
+
+    assert embedding.query == "测试问题"
+    assert vector_store.query_vector == [0.1, 0.2]
+    assert vector_store.top_k == 4
+    assert [item["chunk_id"] for item in evidence] == [2, 1]
+    assert [item["rank_no"] for item in evidence] == [1, 2]
+    assert evidence[0]["file_name"] == "劳动合同法.pdf"
+    assert evidence[0]["retrieval_score"] == evidence[0]["score"] == 0.91
+    assert evidence[0]["rerank_score"] is None
+
+
+def test_retrieval_rejects_missing_index_before_loading_embedding_model() -> None:
+    config = Settings(database_url="sqlite:////tmp/retrieval-unready-test.db")
+    service = RetrievalService(
+        config,
+        repository=FakeRepository(),
+        embedding_service=FailingEmbedding(),
+        vector_store=UnreadyVectorStore(),
+    )
+
+    with pytest.raises(VectorStoreNotInitialized):
+        service.retrieve("测试问题")
+
+
+def test_enabled_reranker_resorts_and_truncates_evidence() -> None:
+    config = Settings(
+        database_url="sqlite:////tmp/retrieval-rerank-test.db",
+        rag_top_k=4,
+        rerank_enabled=True,
+        rerank_top_n=1,
+    )
+    model = FakeCrossEncoder([-2.0, 1.0])
+    service = RetrievalService(
+        config,
+        repository=FakeRepository(),
+        embedding_service=FakeEmbedding(),
+        vector_store=FakeVectorStore(),
+        rerank_service=RerankService(config, model=model),
+    )
+
+    evidence = service.retrieve("测试问题")
+
+    assert model.pairs == [
+        ("测试问题", "证据二"),
+        ("测试问题", "证据一"),
+    ]
+    assert [item["chunk_id"] for item in evidence] == [1]
+    assert evidence[0]["retrieval_score"] == 0.72
+    assert evidence[0]["rerank_score"] == evidence[0]["score"]
+    assert evidence[0]["rank_no"] == 1
+
+
+def test_rerank_failure_keeps_vector_order_and_original_scores() -> None:
+    config = Settings(
+        database_url="sqlite:////tmp/retrieval-rerank-fail-test.db",
+        rag_top_k=4,
+        rerank_enabled=True,
+        rerank_top_n=4,
+    )
+
+    class FailingCrossEncoder:
+        def predict(self, sentences: list[tuple[str, str]]) -> list[float]:
+            raise RuntimeError("model is not cached")
+
+    service = RetrievalService(
+        config,
+        repository=FakeRepository(),
+        embedding_service=FakeEmbedding(),
+        vector_store=FakeVectorStore(),
+        rerank_service=RerankService(config, model=FailingCrossEncoder()),
+    )
+
+    evidence = service.retrieve("测试问题")
+
+    assert [item["chunk_id"] for item in evidence] == [2, 1]
+    assert [item["rerank_score"] for item in evidence] == [None, None]
+    assert [item["score"] for item in evidence] == [0.91, 0.72]

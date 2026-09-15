@@ -62,6 +62,12 @@ class Phase1ContractTests(unittest.TestCase):
         self.assertIn("multipart/form-data", upload["requestBody"]["content"])
         chat = schema["paths"]["/api/chat/stream"]["post"]
         self.assertIn("text/event-stream", chat["responses"]["200"]["content"])
+        for path, method in (
+            ("/api/sessions", "post"),
+            ("/api/sessions/{id}/messages", "get"),
+            ("/api/chat/stream", "post"),
+        ):
+            self.assertNotIn("501", schema["paths"][path][method]["responses"])
 
     def test_validation_uses_envelope_and_exposes_request_id(self) -> None:
         with TestClient(app) as client:
@@ -80,13 +86,13 @@ class Phase1ContractTests(unittest.TestCase):
             response.headers["access-control-expose-headers"], "X-Request-ID"
         )
 
-    def test_contract_route_is_explicitly_not_implemented_yet(self) -> None:
+    def test_session_route_creates_a_session(self) -> None:
         with TestClient(app) as client:
             response = client.post("/api/sessions", json={})
 
-        self.assertEqual(response.status_code, 501)
-        self.assertEqual(response.json()["code"], 50000)
-        self.assertIsNone(response.json()["data"])
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["code"], 0)
+        self.assertIn("id", response.json()["data"])
 
     def test_unknown_route_uses_unified_not_found_message(self) -> None:
         with TestClient(app) as client:

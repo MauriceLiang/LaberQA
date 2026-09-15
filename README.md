@@ -1,6 +1,6 @@
 # 劳动权益咨询问答台
 
-Phase 2 已完成后端文档知识库导入链路：支持文档校验、文本解析、条款分块、Embedding、FAISS 索引和文档管理 API。其余会话、问答、评测和检索实验接口仍按后续阶段逐步实现。
+Phase 4 已完成后端文档知识库、会话与核心 RAG 问答链路：支持文档导入与 FAISS 检索、会话隔离、最近三轮上下文、问题重写、证据门控、SSE 回答和来源持久化。聊天前端、Tool/合规扩展、评测和检索实验仍按后续阶段逐步实现。
 
 ## 环境要求
 
@@ -39,6 +39,8 @@ cd backend
 
 `.pdf`、`.docx`、`.txt` 可直接导入；旧版 `.doc` 需要本机安装 LibreOffice。默认上传上限为 20 MB，默认分块大小/重叠分别为 600/100 字符。备用 API Provider 使用 OpenAI-compatible Embeddings 请求：`POST {EMBEDDING_BASE_URL}/embeddings`，请求体包含 `model` 与 `input`；配置 Provider、模型、归一化方式或分块参数变化后，不兼容的 FAISS 索引会被标记并拒绝检索。
 
+在线回答需要在仓库根目录 `.env` 中配置 OpenAI-compatible Chat Completions 的 `LLM_API_KEY`、`LLM_BASE_URL`（例如以 `/v1` 结尾）和 `LLM_MODEL`。RAG 默认检索 5 个片段，低于 `RAG_SCORE_THRESHOLD=0.35` 时拒答。可通过 `RERANK_ENABLED=true` 启用本地 `BAAI/bge-reranker-base` 重排；模型未缓存在 Hugging Face 本地缓存或重排失败时会告警并回退向量检索顺序。没有可用 LLM 时，问题改写退回原问题、证据判断失败则安全拒答；若回答生成阶段的模型请求失败，SSE 会发送 `error` 事件。
+
 启动 API：
 
 ```sh
@@ -68,7 +70,7 @@ cd frontend
 npm run generate:api-types
 ```
 
-SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。Phase 2 已实现文档上传、列表、详情、Chunk 分页和失败文档重导入 API；上传接口返回 HTTP 202，后台处理状态可从文档详情查询。其余业务操作暂时保留 HTTP 501 契约响应。
+SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。已实现文档上传、列表、详情、Chunk 分页与重导入，以及会话创建、消息历史和 `/api/chat/stream`。上传接口返回 HTTP 202，后台处理状态可从文档详情查询；聊天接口使用 `token → sources → done` 或终止 `error` 事件。Tool、合规提示、评测、缺失知识和检索实验仍暂时保留 HTTP 501 契约响应。
 
 在后端目录运行验收与静态检查：
 

@@ -10,7 +10,7 @@
         <RouterLink to="/">系统状态</RouterLink>
         <RouterLink to="/documents">资料管理</RouterLink>
       </nav>
-      <el-tag type="info" effect="plain">Phase 3</el-tag>
+      <el-tag type="success" effect="plain">Phase 4</el-tag>
     </el-header>
     <el-main class="app-main">
       <router-view />
