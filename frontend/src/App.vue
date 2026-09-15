@@ -7,10 +7,11 @@
         <h1>劳动权益咨询问答台</h1>
       </div>
       <nav class="app-nav" aria-label="主导航">
-        <RouterLink to="/">系统状态</RouterLink>
+        <RouterLink to="/">AI 咨询</RouterLink>
+        <RouterLink to="/system">系统状态</RouterLink>
         <RouterLink to="/documents">资料管理</RouterLink>
       </nav>
-      <el-tag type="success" effect="plain">Phase 4</el-tag>
+      <el-tag type="success" effect="plain">Phase 5</el-tag>
     </el-header>
     <el-main class="app-main">
       <router-view />
