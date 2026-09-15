@@ -6,7 +6,7 @@ import * as chatApi from '@/api/chat'
 import * as sessionsApi from '@/api/sessions'
 import ChatView from '@/views/ChatView.vue'
 import type { MessageItem, SessionItem } from '@/api/sessions'
-import type { CitationItem } from '@/types/sse'
+import type { CitationItem, ToolExecutionItem } from '@/types/sse'
 
 vi.mock('@/api/chat', () => ({
   getChatApiError: (error: unknown) => (error instanceof Error ? error.message : '请求失败'),
@@ -41,6 +41,15 @@ const citation: CitationItem = {
   retrieval_score: 0.84,
   rerank_score: null,
   rank_no: 1,
+}
+
+const materialChecklist: ToolExecutionItem = {
+  tool_name: 'generate_rights_material_checklist',
+  input: { dispute_type: '欠薪', description: '公司拖欠工资，我应该准备什么材料？' },
+  output: {
+    materials: ['劳动合同或能够证明劳动关系的材料', '工资条、银行流水等工资支付记录'],
+    note: '材料清单仅用于信息整理，具体以实际争议和受理机构要求为准。',
+  },
 }
 
 const history: MessageItem[] = [
@@ -125,6 +134,24 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('工资拖欠怎么办？')
     expect(wrapper.text()).toContain('可以先保存工资流水等证据。')
     expect(wrapper.text()).toContain('工资支付规定.txt')
+    wrapper.unmount()
+  })
+
+  it('shows a material checklist received through the tool event', async () => {
+    vi.mocked(chatApi.streamChat).mockImplementation(async (_request, handlers) => {
+      handlers.onTool?.(materialChecklist)
+      handlers.onToken({ content: '建议整理相关材料。' })
+      handlers.onDone({ message_id: 23, answer_style: 'plain', refused: false })
+    })
+    const wrapper = mountView()
+
+    await wrapper.get('textarea').setValue('公司拖欠工资，我应该准备什么材料？')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('材料清单')
+    expect(wrapper.text()).toContain('工资条、银行流水等工资支付记录')
+    expect(wrapper.text()).toContain(materialChecklist.output.note)
     wrapper.unmount()
   })
 

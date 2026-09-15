@@ -1,6 +1,6 @@
 # 劳动权益咨询问答台
 
-Phase 5 已完成后端文档知识库、会话与核心 RAG 问答链路，以及智能问答前端和 SSE 联调：支持文档导入与 FAISS 检索、会话隔离、历史恢复、流式回答、来源展示和主动停止。Tool/合规扩展、评测和检索实验仍按后续阶段逐步实现。
+Phase 6 已完成后端文档知识库、会话与核心 RAG 问答链路，并加入材料清单 Tool、合规提示和 plain/legal 双回答风格。前端支持流式问答、来源与 Tool 清单展示、历史恢复和主动停止；评测、缺失知识和检索实验仍按后续阶段逐步实现。
 
 ## 环境要求
 
@@ -70,7 +70,7 @@ cd frontend
 npm run generate:api-types
 ```
 
-SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。已实现文档上传、列表、详情、Chunk 分页与重导入，以及会话创建、消息历史和 `/api/chat/stream`。上传接口返回 HTTP 202，后台处理状态可从文档详情查询；聊天接口使用 `token → sources → done` 或终止 `error` 事件。Tool、合规提示、评测、缺失知识和检索实验仍暂时保留 HTTP 501 契约响应。
+SSE 事件类型手工维护在 `frontend/src/types/sse.ts`。已实现文档上传、列表、详情、Chunk 分页与重导入，会话创建、消息历史、`/api/chat/stream` 和 `/api/tools/material-checklist`。上传接口返回 HTTP 202，后台处理状态可从文档详情查询；聊天接口使用 `tool? → token+ → sources → done` 或终止 `error` 事件。评测、缺失知识和检索实验仍暂时保留 HTTP 501 契约响应。
 
 在后端目录运行验收与静态检查：
 

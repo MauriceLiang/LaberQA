@@ -13,9 +13,11 @@ from fastapi import Request
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
-from app.schemas.contracts import ChatRequest
+from app.schemas.contracts import ChatRequest, MaterialChecklistInput, ToolExecutionItem
+from app.services.compliance import COMPLIANCE_NOTICE, ComplianceRuleService
 from app.services.embedding import EmbeddingUnavailableError
 from app.services.llm import LlmClient, ModelUnavailableError
+from app.services.material_checklist import MaterialChecklistTool, ToolDecisionService
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -28,6 +30,10 @@ _PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
 _REFUSAL = (
     "目前知识库中的资料不足以支持对这个问题作出可靠判断。请补充相关资料后再咨询。"
 )
+_ANSWER_STYLE_INSTRUCTIONS = {
+    "plain": "面向普通劳动者，少用专业术语，先给简明结论，再解释依据和可执行建议。",
+    "legal": "使用严谨、客观的表达，明确说明证据支持的适用条件、事实前提与结论边界。",
+}
 
 
 class ChatService:
@@ -43,6 +49,9 @@ class ChatService:
         self.retrieval_service = retrieval_service
         self.config = config
         self.llm_client = llm_client or LlmClient(config)
+        self.tool_decision_service = ToolDecisionService()
+        self.material_checklist_tool = MaterialChecklistTool()
+        self.compliance_rule_service = ComplianceRuleService()
 
     def create_session(self, title: str | None) -> dict[str, Any]:
         return self.session_service.create_session(title)
@@ -52,6 +61,11 @@ class ChatService:
 
     def list_messages(self, session_id: UUID) -> list[dict[str, Any]]:
         return self.session_service.list_messages(session_id)
+
+    def execute_material_checklist(
+        self, payload: MaterialChecklistInput
+    ) -> ToolExecutionItem:
+        return self.material_checklist_tool.execute(payload)
 
     async def stream_chat(self, payload: ChatRequest, request: Request):
         session_id = payload.session_id
@@ -135,13 +149,41 @@ class ChatService:
         if await request.is_disconnected():
             return
 
+        compliance_required = self.compliance_rule_service.requires_notice(
+            question, rewritten_question
+        )
         answer_parts: list[str] = []
+        tool_executions: list[ToolExecutionItem] = []
         if refused:
             answer_parts.append(_REFUSAL)
             yield _sse("token", {"content": _REFUSAL})
         else:
+            tool_input = self.tool_decision_service.decide(question, rewritten_question)
+            if tool_input is not None:
+                try:
+                    execution = self.material_checklist_tool.execute(tool_input)
+                except Exception:
+                    logger.exception("Material checklist tool execution failed")
+                    yield _sse(
+                        "error",
+                        {
+                            "code": int(ErrorCode.INTERNAL_ERROR),
+                            "message": "材料清单生成失败",
+                        },
+                    )
+                    return
+                if await request.is_disconnected():
+                    return
+                tool_executions.append(execution)
+                yield _sse("tool", execution.model_dump(mode="json"))
+
             messages = self._answer_messages(
-                payload, question, rewritten_question, evidence
+                payload,
+                question,
+                rewritten_question,
+                evidence,
+                compliance_required,
+                tool_executions[0] if tool_executions else None,
             )
             try:
                 async for token in self.llm_client.stream(messages):
@@ -178,6 +220,17 @@ class ChatService:
                 },
             )
             return
+
+        completed_answer = "".join(answer_parts)
+        compliance_required = compliance_required or (
+            self.compliance_rule_service.requires_notice(
+                question, rewritten_question, completed_answer
+            )
+        )
+        if compliance_required and COMPLIANCE_NOTICE not in completed_answer:
+            notice = f"\n\n{COMPLIANCE_NOTICE}"
+            answer_parts.append(notice)
+            yield _sse("token", {"content": notice})
         if await request.is_disconnected():
             return
 
@@ -192,7 +245,7 @@ class ChatService:
                 answer_style=payload.answer_style.value,
                 refused=refused,
                 citations=[] if refused else evidence,
-                tool_executions=[],
+                tool_executions=tool_executions,
             )
         except Exception:
             logger.exception("Could not persist completed assistant response")
@@ -281,12 +334,29 @@ class ChatService:
         question: str,
         rewritten_question: str,
         evidence: list[dict[str, Any]],
+        compliance_required: bool,
+        tool_execution: ToolExecutionItem | None,
     ) -> list[dict[str, str]]:
         template = (_PROMPT_DIR / "answer_system.txt").read_text(encoding="utf-8")
+        compliance_instruction = (
+            f"回答末尾必须逐字包含以下提示：{COMPLIANCE_NOTICE}"
+            if compliance_required
+            else "当前规则未要求固定提示；回答仍须遵守证据约束。"
+        )
         replacements = {
             "{{answer_style}}": payload.answer_style.value,
-            "{{compliance_required}}": "false",
-            "{{tool_result}}": "无",
+            "{{answer_style_instructions}}": _ANSWER_STYLE_INSTRUCTIONS[
+                payload.answer_style.value
+            ],
+            "{{compliance_required}}": str(compliance_required).lower(),
+            "{{compliance_instruction}}": compliance_instruction,
+            "{{tool_result}}": (
+                json.dumps(
+                    tool_execution.output.model_dump(mode="json"), ensure_ascii=False
+                )
+                if tool_execution
+                else "无"
+            ),
             "{{question}}": question,
             "{{rewritten_question}}": rewritten_question,
             "{{context}}": "\n\n".join(

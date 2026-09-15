@@ -74,3 +74,57 @@ def test_session_and_chat_routes_use_the_frozen_contract_in_process() -> None:
                 settings.faiss_dir,
                 settings.upload_dir,
             ) = original_values
+
+
+def test_material_checklist_route_returns_shared_tool_execution_contract() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "tool-api.db"
+        chat_service = ChatService(
+            SessionService(database_path=database_path),
+            UnreadyRetrieval(),
+            Settings(
+                database_url=f"sqlite:///{database_path}",
+                llm_api_key="",
+                llm_base_url="",
+                llm_model="",
+            ),
+        )
+        app.dependency_overrides[get_chat_service] = lambda: chat_service
+
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/tools/material-checklist",
+                    json={
+                        "dispute_type": "欠薪",
+                        "description": "单位连续两个月未支付工资",
+                    },
+                )
+        finally:
+            app.dependency_overrides.pop(get_chat_service, None)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "code": 0,
+            "message": "success",
+            "data": {
+                "tool_name": "generate_rights_material_checklist",
+                "input": {
+                    "dispute_type": "欠薪",
+                    "description": "单位连续两个月未支付工资",
+                },
+                "output": {
+                    "materials": [
+                        "劳动合同或能够证明劳动关系的材料",
+                        "工资条、银行流水等工资支付记录",
+                        "考勤、排班或工作记录",
+                        "与用人单位沟通欠薪问题的记录",
+                    ],
+                    "note": "材料清单仅用于信息整理，具体以实际争议和受理机构要求为准。",
+                },
+            },
+        }
+        tool_responses = app.openapi()["paths"]["/api/tools/material-checklist"][
+            "post"
+        ]["responses"]
+        assert "501" not in tool_responses
