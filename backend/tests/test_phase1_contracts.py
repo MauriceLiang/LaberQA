@@ -4,15 +4,14 @@ import unittest
 from pathlib import Path
 
 import httpx
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
 from app.main import app
 from app.schemas.contracts import EvaluationCase, ExperimentConfig
 from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -22,6 +21,7 @@ EXPECTED_OPERATIONS = {
     ("post", "/api/documents/{id}/reimport"),
     ("get", "/api/documents/{id}/chunks"),
     ("post", "/api/sessions"),
+    ("get", "/api/sessions"),
     ("get", "/api/sessions/{id}/messages"),
     ("post", "/api/chat/stream"),
     ("post", "/api/tools/material-checklist"),

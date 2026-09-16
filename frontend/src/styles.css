@@ -171,6 +171,13 @@ input {
   font-weight: 700;
 }
 
+.recent-error {
+  margin: 0 6px 4px;
+  color: #b24d4d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .recent-add {
   display: grid;
   width: 22px;

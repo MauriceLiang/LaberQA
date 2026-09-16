@@ -242,6 +242,25 @@ def create_session(
 
 
 @router.get(
+    "/sessions",
+    response_model=ApiResponse[list[SessionItem]],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["sessions"],
+    summary="List recent chat sessions",
+)
+def list_sessions(
+    service: Annotated[ChatService, Depends(get_chat_service)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ApiResponse[list[SessionItem]]:
+    sessions = service.list_sessions(limit)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=[SessionItem.model_validate(session) for session in sessions],
+    )
+
+
+@router.get(
     "/sessions/{id}/messages",
     response_model=ApiResponse[list[MessageItem]],
     responses=IMPLEMENTED_RESPONSES,

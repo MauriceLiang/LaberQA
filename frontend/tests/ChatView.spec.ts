@@ -7,6 +7,7 @@ import * as chatApi from '@/api/chat'
 import * as sessionsApi from '@/api/sessions'
 import ChatView from '@/views/ChatView.vue'
 import type { MessageItem, SessionItem } from '@/api/sessions'
+import { useSessionStore } from '@/stores/session'
 import type { CitationItem, ToolExecutionItem } from '@/types/sse'
 
 vi.mock('@/api/chat', () => ({
@@ -16,6 +17,7 @@ vi.mock('@/api/chat', () => ({
 
 vi.mock('@/api/sessions', () => ({
   createSession: vi.fn(),
+  listSessions: vi.fn(),
   getSessionMessages: vi.fn(),
 }))
 
@@ -80,14 +82,32 @@ const history: MessageItem[] = [
   },
 ]
 
+const nextHistory: MessageItem[] = [
+  {
+    ...history[0],
+    id: 3,
+    session_id: nextSession.id,
+    content: '新会话的问题',
+  },
+]
+
 function mountView() {
   return mount(ChatView, { global: { plugins: [createPinia()] } })
+}
+
+function mountViewWithStore() {
+  const pinia = createPinia()
+  return {
+    wrapper: mount(ChatView, { global: { plugins: [pinia] } }),
+    store: useSessionStore(pinia),
+  }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   vi.mocked(sessionsApi.createSession).mockResolvedValue(session)
+  vi.mocked(sessionsApi.listSessions).mockResolvedValue([])
   vi.mocked(sessionsApi.getSessionMessages).mockResolvedValue([])
 })
 
@@ -120,6 +140,7 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('参考资料（1）')
 
     await wrapper.get('.new-session-button').trigger('click')
+    await flushPromises()
     expect(localStorage.getItem('labor-rights-qa.session-id')).toBeNull()
     expect(wrapper.findAll('.message-row')).toHaveLength(0)
     wrapper.unmount()
@@ -135,6 +156,23 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('工资拖欠怎么办？')
     expect(wrapper.text()).toContain('可以先保存工资流水等证据。')
     expect(wrapper.text()).toContain('工资支付规定.txt')
+    wrapper.unmount()
+  })
+
+  it('reloads messages when a different recent session is selected', async () => {
+    localStorage.setItem('labor-rights-qa.session-id', session.id)
+    vi.mocked(sessionsApi.getSessionMessages)
+      .mockResolvedValueOnce(history)
+      .mockResolvedValueOnce(nextHistory)
+    const { wrapper, store } = mountViewWithStore()
+    await flushPromises()
+
+    store.setSessionId(nextSession.id)
+    await flushPromises()
+
+    expect(sessionsApi.getSessionMessages).toHaveBeenLastCalledWith(nextSession.id)
+    expect(wrapper.text()).toContain('新会话的问题')
+    expect(wrapper.text()).not.toContain('工资拖欠怎么办？')
     wrapper.unmount()
   })
 
@@ -195,6 +233,7 @@ describe('ChatView', () => {
     expect(sessionsApi.createSession).toHaveBeenCalledTimes(1)
 
     await wrapper.get('.new-session-button').trigger('click')
+    await flushPromises()
     await ask('新会话的问题')
 
     const finalRequest = vi.mocked(chatApi.streamChat).mock.calls.at(-1)?.[0]
