@@ -13,7 +13,6 @@ defineEmits<{
 
 <template>
   <div class="answer-style-switch" role="group" aria-label="回答风格">
-    <span>回答风格</span>
     <button
       type="button"
       :aria-pressed="modelValue === 'plain'"
@@ -22,6 +21,7 @@ defineEmits<{
     >
       通俗解释
     </button>
+    <span class="answer-style-divider" aria-hidden="true">/</span>
     <button
       type="button"
       :aria-pressed="modelValue === 'legal'"

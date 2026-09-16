@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import AnswerStyleSwitch from '@/components/chat/AnswerStyleSwitch.vue'
+import type { AnswerStyle } from '@/types/sse'
+
 defineProps<{
   modelValue: string
   disabled: boolean
   streaming: boolean
+  answerStyle: AnswerStyle
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:answerStyle': [value: AnswerStyle]
   submit: []
   stop: []
 }>()
@@ -33,7 +38,14 @@ function handleKeydown(event: KeyboardEvent) {
       @keydown="handleKeydown"
     />
     <div class="question-input-footer">
-      <span class="input-hint">Enter 发送 · Shift+Enter 换行 · 最多 2000 字</span>
+      <div class="question-input-options">
+        <AnswerStyleSwitch
+          :model-value="answerStyle"
+          :disabled="streaming"
+          @update:model-value="emit('update:answerStyle', $event)"
+        />
+        <span class="input-hint">Enter 发送 · Shift+Enter 换行 · 最多 2000 字</span>
+      </div>
       <span class="input-actions">
         <span class="question-count">{{ modelValue.trim().length }}/2000</span>
         <button v-if="streaming" class="secondary-button stop-button" type="button" @click="emit('stop')">
