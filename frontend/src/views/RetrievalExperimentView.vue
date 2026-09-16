@@ -171,6 +171,25 @@ function formatDuration(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : value.toFixed(1) + ' ms'
 }
 
+function formatCreatedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function progressPercent(current: number, total: number) {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((current / total) * 100))
+}
+
+function statusClass(value: ExperimentStatus | undefined) {
+  if (value === 'COMPLETED') return 'experiment-status-completed'
+  if (value === 'FAILED') return 'experiment-status-failed'
+  if (value === 'RUNNING') return 'experiment-status-running'
+  return 'experiment-status-pending'
+}
+
 function configResult(index: number): ExperimentConfigResult | undefined {
   return configResults.value.get(index)
 }
@@ -200,25 +219,35 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="experiment-page" aria-labelledby="experiment-title">
-    <div class="page-intro">
+    <header class="experiment-intro">
       <div>
         <p class="eyebrow">RETRIEVAL STRATEGY EXPERIMENT</p>
-        <h2 id="experiment-title">检索策略实验</h2>
-        <p>使用同一批 60 条评测用例，对比六种固定检索配置及其命中的实验 Chunk。</p>
+        <h1 id="experiment-title">检索策略实验</h1>
+        <p>使用同一批 60 条评测用例，对比六种固定检索配置及命中结果。</p>
       </div>
-      <span class="experiment-count">固定对比 A–F 共 {{ experimentGroups.length }} 组</span>
-    </div>
+      <span class="experiment-count">固定对比 A–F · 共 {{ experimentGroups.length }} 组</span>
+    </header>
 
     <section class="experiment-panel" aria-labelledby="experiment-config-title">
       <div class="experiment-heading">
         <div>
-          <h3 id="experiment-config-title">固定实验配置</h3>
-          <p>每组 overlap 为 100、score threshold 为 0.35；检索索引独立构建。</p>
+          <h2 id="experiment-config-title">固定实验配置</h2>
+          <p>每组 overlap 100 · 阈值 0.35 · 独立构建实验索引</p>
         </div>
       </div>
       <div class="experiment-table-wrap">
-        <table class="experiment-table">
-          <thead><tr><th>组别</th><th>Chunk Size</th><th>Overlap</th><th>Top-k</th><th>Rerank</th><th>Rerank Top-N</th><th>阈值</th></tr></thead>
+        <table class="experiment-table experiment-config-table">
+          <thead>
+            <tr>
+              <th scope="col">组别</th>
+              <th scope="col">Chunk Size</th>
+              <th scope="col">Overlap</th>
+              <th scope="col">Top-k</th>
+              <th scope="col">Rerank</th>
+              <th scope="col">Rerank Top-N</th>
+              <th scope="col">阈值</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="group in experimentGroups" :key="group.label">
               <th scope="row">{{ group.label }}</th>
@@ -234,44 +263,54 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="experiment-panel" aria-labelledby="experiment-create-title">
-      <div class="experiment-heading">
-        <div>
-          <h3 id="experiment-create-title">创建实验</h3>
-          <p>每次实验均运行全部 60 条用例和六组固定配置。</p>
+    <section class="experiment-panel experiment-create-panel" aria-labelledby="experiment-create-title">
+      <div class="experiment-create-layout">
+        <div class="experiment-heading">
+          <div>
+            <h2 id="experiment-create-title">创建实验</h2>
+            <p>每次实验运行全部 60 条用例</p>
+          </div>
         </div>
+        <form class="experiment-create-form" @submit.prevent="submitExperiment">
+          <label>
+            <span>实验名称</span>
+            <input v-model="experimentName" maxlength="100" required placeholder="例如：检索参数对比-20260915" />
+          </label>
+          <label>
+            <span>回答风格</span>
+            <select v-model="answerStyle">
+              <option value="">使用默认值</option>
+              <option value="plain">通俗版</option>
+              <option value="legal">严谨版</option>
+            </select>
+          </label>
+          <button class="experiment-primary" type="submit" :disabled="creating">
+            {{ creating ? '创建中…' : '创建实验' }}
+          </button>
+        </form>
       </div>
-      <form class="experiment-create-form" @submit.prevent="submitExperiment">
-        <label>
-          实验名称
-          <input v-model="experimentName" maxlength="100" required placeholder="例如：检索参数对比-20260915" />
-        </label>
-        <label>
-          回答风格（可选，默认通俗版）
-          <select v-model="answerStyle">
-            <option value="">使用默认值</option>
-            <option value="plain">通俗版</option>
-            <option value="legal">严谨版</option>
-          </select>
-        </label>
-        <button class="experiment-primary" type="submit" :disabled="creating">
-          {{ creating ? '创建中…' : '创建实验' }}
-        </button>
-      </form>
       <p v-if="createError" class="experiment-error" role="alert">{{ createError }}</p>
     </section>
 
     <section class="experiment-panel" aria-labelledby="experiment-list-title">
       <div class="experiment-heading">
         <div>
-          <h3 id="experiment-list-title">实验记录</h3>
-          <p>后台运行中的实验每 2 秒刷新详情，完成或失败后自动停止轮询。</p>
+          <h2 id="experiment-list-title">实验记录</h2>
+          <p>选择实验查看进度；运行中的任务每 2 秒更新一次。</p>
         </div>
       </div>
       <p v-if="listError" class="experiment-error" role="alert">{{ listError }}</p>
       <div class="experiment-table-wrap" :aria-busy="loadingList">
         <table class="experiment-table experiment-list-table">
-          <thead><tr><th>实验</th><th>状态</th><th>进度</th><th>创建时间</th></tr></thead>
+          <thead>
+            <tr>
+              <th scope="col" class="experiment-select-cell"><span class="sr-only">选择</span></th>
+              <th scope="col">实验名称</th>
+              <th scope="col">状态</th>
+              <th scope="col">进度</th>
+              <th scope="col">创建时间</th>
+            </tr>
+          </thead>
           <tbody>
             <tr
               v-for="item in experiments"
@@ -279,12 +318,28 @@ onBeforeUnmount(() => {
               :class="{ 'experiment-row-selected': item.id === selectedId }"
               @click="selectExperiment(item)"
             >
+              <td class="experiment-select-cell">
+                <input
+                  :aria-label="`选择实验 ${item.name}`"
+                  type="radio"
+                  name="retrieval-experiment"
+                  :checked="item.id === selectedId"
+                  @click.stop
+                  @change="selectExperiment(item)"
+                />
+              </td>
               <td><button class="experiment-link" type="button" @click.stop="selectExperiment(item)">{{ item.name }}</button></td>
-              <td>{{ formatStatus(item.status) }}</td>
+              <td>
+                <span class="experiment-status-inline" :class="statusClass(item.status)">
+                  <i aria-hidden="true" />{{ formatStatus(item.status) }}
+                </span>
+              </td>
               <td>{{ item.progress_current }} / {{ item.progress_total }}</td>
-              <td>{{ new Date(item.created_at).toLocaleString() }}</td>
+              <td>{{ formatCreatedAt(item.created_at) }}</td>
             </tr>
-            <tr v-if="!loadingList && experiments.length === 0"><td colspan="4" class="experiment-empty">暂无检索实验</td></tr>
+            <tr v-if="!loadingList && experiments.length === 0">
+              <td colspan="5" class="experiment-empty">暂无检索实验</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -295,33 +350,47 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="selectedId !== undefined" class="experiment-panel" aria-labelledby="experiment-detail-title">
-      <div class="experiment-heading">
+    <section v-if="selectedId !== undefined" class="experiment-panel experiment-detail-panel" aria-labelledby="experiment-detail-title">
+      <div class="experiment-heading experiment-detail-heading">
         <div>
           <p class="eyebrow">EXPERIMENT DETAIL</p>
-          <h3 id="experiment-detail-title">{{ selectedName || '检索实验 #' + selectedId }}</h3>
+          <h2 id="experiment-detail-title">{{ selectedName || '检索实验 #' + selectedId }}</h2>
+          <p v-if="detail" class="experiment-signature">
+            Embedding 快照：{{ detail.embedding_signature.embedding_provider }} · {{ detail.embedding_signature.embedding_model }} · {{ detail.embedding_signature.embedding_dimension }} 维
+          </p>
         </div>
-        <span class="experiment-status">{{ formatStatus(status) }}</span>
+        <span class="experiment-status" :class="statusClass(status)">{{ formatStatus(status) }}</span>
       </div>
       <p v-if="detailError" class="experiment-error" role="alert">{{ detailError }}</p>
       <p v-if="detail?.error_message" class="experiment-error" role="alert">{{ detail.error_message }}</p>
       <p v-if="loadingDetail && !detail" class="experiment-muted">正在读取实验详情…</p>
       <template v-if="detail">
-        <div class="experiment-progress" aria-label="实验进度">
-          <span>{{ detail.progress_current }} / {{ detail.progress_total }} 题次</span>
-          <progress :value="detail.progress_current" :max="Math.max(detail.progress_total, 1)" />
+        <div class="experiment-summary-row">
+          <div class="experiment-progress" aria-label="实验进度">
+            <span>进度</span>
+            <progress :value="detail.progress_current" :max="Math.max(detail.progress_total, 1)" />
+            <strong>{{ detail.progress_current }} / {{ detail.progress_total }} 题次</strong>
+            <span class="experiment-progress-percent">{{ progressPercent(detail.progress_current, detail.progress_total) }}%</span>
+          </div>
+          <p v-if="detail.best_config_index !== null" class="experiment-best" role="status">
+            当前最优配置：<strong>{{ experimentGroups[detail.best_config_index]?.label ?? '#' + detail.best_config_index }}</strong>
+          </p>
         </div>
-        <p class="experiment-signature">
-          Embedding 快照：{{ detail.embedding_signature.embedding_provider }} · {{ detail.embedding_signature.embedding_model }} · {{ detail.embedding_signature.embedding_dimension }} 维
-        </p>
-        <p v-if="detail.best_config_index !== null" class="experiment-best" role="status">
-          当前最优配置：{{ experimentGroups[detail.best_config_index]?.label ?? '#' + detail.best_config_index }}
-        </p>
-        <div v-else-if="detail.status === 'COMPLETED'" class="experiment-muted">没有可比较的完整配置结果。</div>
+        <p v-if="detail.best_config_index === null && detail.status === 'COMPLETED'" class="experiment-muted">没有可比较的完整配置结果。</p>
 
         <div class="experiment-table-wrap">
           <table class="experiment-table experiment-results-table">
-            <thead><tr><th>配置</th><th>Chunk / Top-k / Rerank</th><th>引用命中率</th><th>正确率</th><th>拒答率</th><th>平均检索耗时</th><th>状态</th></tr></thead>
+            <thead>
+              <tr>
+                <th scope="col">配置</th>
+                <th scope="col">Chunk / Top-k / Rerank</th>
+                <th scope="col">引用命中率</th>
+                <th scope="col">正确率</th>
+                <th scope="col">拒答率</th>
+                <th scope="col">平均检索耗时</th>
+                <th scope="col">状态</th>
+              </tr>
+            </thead>
             <tbody>
               <tr
                 v-for="(group, index) in experimentGroups"
@@ -330,9 +399,10 @@ onBeforeUnmount(() => {
                   'experiment-row-selected': index === expandedConfigIndex,
                   'experiment-row-best': index === detail.best_config_index,
                 }"
+                @click="chooseConfig(index)"
               >
                 <th scope="row">
-                  <button class="experiment-link" type="button" :aria-expanded="index === expandedConfigIndex" @click="chooseConfig(index)">
+                  <button class="experiment-link" type="button" :aria-expanded="index === expandedConfigIndex" @click.stop="chooseConfig(index)">
                     {{ group.label }}{{ index === detail.best_config_index ? ' · 最优' : '' }}
                   </button>
                 </th>
@@ -341,35 +411,46 @@ onBeforeUnmount(() => {
                 <td>{{ formatRate(configResult(index)?.accuracy) }}</td>
                 <td>{{ formatRate(configResult(index)?.reject_rate) }}</td>
                 <td>{{ formatDuration(configResult(index)?.avg_retrieval_ms) }}</td>
-                <td>{{ configStatus(index) }}</td>
+                <td>
+                  <span class="experiment-status-inline" :class="statusClass(detail.status)">
+                    <i aria-hidden="true" />{{ configStatus(index) }}
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div v-if="expandedConfigIndex !== undefined" class="experiment-cases">
-          <h4>{{ experimentGroups[expandedConfigIndex]?.label }} 组逐题检索结果（{{ selectedConfigResults.length }}）</h4>
+          <h3>{{ experimentGroups[expandedConfigIndex]?.label }} 组逐题检索结果（{{ selectedConfigResults.length }}）</h3>
           <p class="experiment-muted">以下段号来自该组重新切分后的实验 Chunk，不对应原评测集中的来源段号。</p>
           <p v-if="selectedConfigResults.length === 0" class="experiment-muted">此配置尚无逐题结果。</p>
-          <article v-for="result in selectedConfigResults" :key="result.case_id" class="experiment-case">
-            <div class="experiment-case-heading">
-              <strong>用例 #{{ result.case_id }}</strong>
-              <span :class="result.status === 'FAILED' ? 'experiment-failed' : 'experiment-completed'">{{ result.status === 'FAILED' ? '单题失败' : '已完成' }}</span>
-              <span>引用命中：{{ result.source_hit === null ? '—' : result.source_hit ? '是' : '否' }}</span>
-              <span>正确：{{ result.correct === null ? '—' : result.correct ? '是' : '否' }}</span>
-              <span>拒答：{{ result.refused === null ? '—' : result.refused ? '是' : '否' }}</span>
-              <span>{{ formatDuration(result.retrieval_ms) }}</span>
+          <details v-for="(result, resultIndex) in selectedConfigResults" :key="result.case_id" class="experiment-case" :open="resultIndex === 0">
+            <summary class="experiment-case-summary">
+              <span class="experiment-case-chevron" aria-hidden="true">⌄</span>
+              <strong>{{ experimentGroups[expandedConfigIndex]?.label }} 组逐题结果</strong>
+              <span>（{{ selectedConfigResults.length }}）</span>
+              <span>· 用例 #{{ result.case_id }}</span>
+              <span>· 引用命中：<b>{{ result.source_hit === null ? '—' : result.source_hit ? '是' : '否' }}</b></span>
+              <span>· 正确：<b>{{ result.correct === null ? '—' : result.correct ? '是' : '否' }}</b></span>
+            </summary>
+            <div class="experiment-case-body">
+              <div class="experiment-case-heading">
+                <span :class="result.status === 'FAILED' ? 'experiment-failed' : 'experiment-completed'">{{ result.status === 'FAILED' ? '单题失败' : '已完成' }}</span>
+                <span>拒答：{{ result.refused === null ? '—' : result.refused ? '是' : '否' }}</span>
+                <span>{{ formatDuration(result.retrieval_ms) }}</span>
+              </div>
+              <p v-if="result.error_message" class="experiment-error">{{ result.error_message }}</p>
+              <p v-if="result.retrieved_sources.length === 0" class="experiment-muted">没有命中来源。</p>
+              <ul v-else class="experiment-sources">
+                <li v-for="source in result.retrieved_sources" :key="source.chunk_id">
+                  <strong>{{ source.file_name }} · 实验分块第 {{ source.chunk_no }} 段</strong>
+                  <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}<template v-if="source.rerank_score !== null"> · 重排分 {{ source.rerank_score.toFixed(3) }}</template></span>
+                  <p>{{ source.content }}</p>
+                </li>
+              </ul>
             </div>
-            <p v-if="result.error_message" class="experiment-error">{{ result.error_message }}</p>
-            <p v-if="result.retrieved_sources.length === 0" class="experiment-muted">没有命中来源。</p>
-            <ul v-else class="experiment-sources">
-              <li v-for="source in result.retrieved_sources" :key="source.chunk_id">
-                <strong>{{ source.file_name }} · 实验分块第 {{ source.chunk_no }} 段</strong>
-                <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}<template v-if="source.rerank_score !== null"> · 重排分 {{ source.rerank_score.toFixed(3) }}</template></span>
-                <p>{{ source.content }}</p>
-              </li>
-            </ul>
-          </article>
+          </details>
         </div>
       </template>
     </section>
@@ -377,48 +458,627 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.experiment-page { display: grid; gap: 20px; }
-.experiment-count { color: #26705d; font-size: 13px; font-weight: 650; white-space: nowrap; }
-.experiment-panel { padding: 22px; background: #fff; border: 1px solid #e8edf3; border-radius: 16px; }
-.experiment-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-.experiment-heading h3 { margin: 0; font-size: 17px; }
-.experiment-heading p:not(.eyebrow) { margin: 6px 0 0; color: #758195; font-size: 13px; }
-.experiment-create-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
-.experiment-create-form label { display: grid; gap: 6px; color: #667286; font-size: 13px; }
-.experiment-create-form input, .experiment-create-form select { min-height: 36px; padding: 7px 9px; color: #202938; background: #fff; border: 1px solid #d8dee8; border-radius: 7px; font: inherit; }
-.experiment-create-form input { min-width: 280px; }
-.experiment-primary { min-height: 36px; padding: 0 14px; color: #fff; background: #26705d; border: 0; border-radius: 7px; cursor: pointer; }
-.experiment-primary:disabled { opacity: .6; cursor: default; }
-.experiment-table-wrap { margin-top: 12px; overflow-x: auto; }
-.experiment-table { width: 100%; border-collapse: collapse; text-align: left; }
-.experiment-table th, .experiment-table td { padding: 11px 9px; border-bottom: 1px solid #edf0f4; vertical-align: top; }
-.experiment-table th { color: #758195; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.experiment-table td { color: #4e5a6b; font-size: 13px; }
-.experiment-list-table tbody tr { cursor: pointer; }
-.experiment-list-table tbody tr:hover, .experiment-row-selected { background: #f0f7f4; }
-.experiment-row-best { background: #f0f7f4; }
-.experiment-link { padding: 0; color: #26705d; font: inherit; font-weight: 650; text-align: left; background: none; border: 0; cursor: pointer; }
-.experiment-status { padding: 5px 10px; color: #26705d; background: #edf7f3; border-radius: 999px; font-size: 12px; font-weight: 650; }
-.experiment-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; color: #667286; font-size: 13px; }
-.experiment-progress progress { width: 100%; height: 10px; accent-color: #26705d; }
-.experiment-signature, .experiment-muted { color: #8a95a5; font-size: 13px; line-height: 1.6; }
-.experiment-best { margin: 14px 0 0; padding: 12px 14px; color: #26705d; background: #f0f7f4; border-radius: 9px; font-size: 14px; font-weight: 650; }
-.experiment-results-table tbody tr { cursor: default; }
-.experiment-cases { margin-top: 22px; }
-.experiment-cases h4 { margin: 0 0 8px; font-size: 15px; }
-.experiment-case { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid #edf0f4; }
-.experiment-case-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; color: #667286; font-size: 12px; }
-.experiment-case-heading strong { color: #202938; font-size: 13px; }
-.experiment-completed { color: #26705d; }
-.experiment-failed, .experiment-error { color: #c45656; }
-.experiment-sources { display: grid; gap: 12px; margin: 0; padding-left: 20px; color: #4e5a6b; font-size: 13px; }
-.experiment-sources li { display: grid; gap: 5px; }
-.experiment-sources li > span { color: #758195; font-size: 12px; }
-.experiment-sources p { margin: 0; line-height: 1.6; white-space: pre-wrap; }
-.experiment-error { margin: 10px 0; padding: 10px 12px; background: #fff1f0; border: 1px solid #f3d0ce; border-radius: 8px; font-size: 13px; }
-.experiment-empty { padding: 26px !important; color: #8a95a5 !important; text-align: center; }
-.experiment-pagination { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; color: #758195; font-size: 13px; }
-.experiment-pagination button { min-height: 34px; padding: 0 10px; color: #4e5a6b; background: #fff; border: 1px solid #d8dee8; border-radius: 7px; cursor: pointer; }
-.experiment-pagination button:disabled { color: #b4bbc5; cursor: default; }
-@media (max-width: 700px) { .experiment-panel { padding: 16px; } .experiment-create-form { align-items: stretch; } .experiment-create-form label { flex: 1 1 100%; } }
+.experiment-page {
+  display: grid;
+  width: min(100%, 1100px);
+  margin: 0 auto;
+  gap: 12px;
+  color: #263548;
+}
+
+.experiment-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 8px 2px 10px;
+}
+
+.experiment-intro h1 {
+  margin: 0;
+  color: #155a42;
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  font-size: clamp(30px, 2.8vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.06em;
+  line-height: 1.16;
+}
+
+.experiment-intro > div > p:last-child {
+  margin: 8px 0 0;
+  color: #7b8798;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.experiment-count {
+  padding: 8px 15px;
+  color: #185b44;
+  background: #f0f7f4;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.experiment-panel {
+  min-width: 0;
+  padding: 14px 14px 12px;
+  background: #fff;
+  border: 1px solid #e1e9e4;
+  border-radius: 9px;
+}
+
+.experiment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 11px;
+}
+
+.experiment-heading h2 {
+  margin: 0;
+  color: #20352d;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.experiment-heading p:not(.eyebrow) {
+  margin: 5px 0 0;
+  color: #758195;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.experiment-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.experiment-table {
+  width: 100%;
+  min-width: 900px;
+  border-spacing: 0;
+  text-align: left;
+}
+
+.experiment-table th,
+.experiment-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #edf0f1;
+  vertical-align: middle;
+}
+
+.experiment-table th {
+  color: #68758a;
+  background: #f4f6f5;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.experiment-table th:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.experiment-table th:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.experiment-table td {
+  color: #354257;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.experiment-config-table {
+  table-layout: fixed;
+  text-align: center;
+}
+
+.experiment-config-table th,
+.experiment-config-table td {
+  text-align: center;
+}
+
+.experiment-config-table th:first-child,
+.experiment-config-table td:first-child { width: 9%; }
+.experiment-config-table th:nth-child(2),
+.experiment-config-table td:nth-child(2) { width: 17%; }
+.experiment-config-table th:nth-child(3),
+.experiment-config-table td:nth-child(3) { width: 15%; }
+.experiment-config-table th:nth-child(4),
+.experiment-config-table td:nth-child(4) { width: 15%; }
+.experiment-config-table th:nth-child(5),
+.experiment-config-table td:nth-child(5) { width: 15%; }
+.experiment-config-table th:nth-child(6),
+.experiment-config-table td:nth-child(6) { width: 17%; }
+.experiment-config-table th:nth-child(7),
+.experiment-config-table td:nth-child(7) { width: 12%; }
+
+.experiment-config-table tbody th {
+  color: #354257;
+  background: #fff;
+  font-size: 12px;
+}
+
+.experiment-primary {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #fff;
+  background: #126047;
+  border: 1px solid #126047;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.experiment-primary:hover:not(:disabled) {
+  background: #0f523c;
+  border-color: #0f523c;
+}
+
+.experiment-primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.experiment-create-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.experiment-create-layout .experiment-heading {
+  margin: 0;
+}
+
+.experiment-create-form {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(150px, 180px) 126px;
+  align-items: center;
+  gap: 10px;
+}
+
+.experiment-create-form label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #758195;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.experiment-create-form input,
+.experiment-create-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #354257;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
+  outline: 0;
+  font: inherit;
+}
+
+.experiment-create-form input::placeholder {
+  color: #a0a9b5;
+}
+
+.experiment-list-table {
+  min-width: 700px;
+  table-layout: fixed;
+}
+
+.experiment-list-table th:nth-child(1),
+.experiment-list-table td:nth-child(1) { width: 42px; }
+.experiment-list-table th:nth-child(2),
+.experiment-list-table td:nth-child(2) { width: 42%; }
+.experiment-list-table th:nth-child(3),
+.experiment-list-table td:nth-child(3) { width: 18%; }
+.experiment-list-table th:nth-child(4),
+.experiment-list-table td:nth-child(4) { width: 18%; }
+.experiment-list-table th:nth-child(5),
+.experiment-list-table td:nth-child(5) { width: 22%; }
+
+.experiment-select-cell {
+  text-align: center;
+}
+
+.experiment-table input[type='radio'] {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #146348;
+  cursor: pointer;
+}
+
+.experiment-list-table tbody tr {
+  cursor: pointer;
+}
+
+.experiment-list-table tbody tr:hover,
+.experiment-row-selected {
+  background: #f0f7f4;
+}
+
+.experiment-link {
+  padding: 0;
+  color: #185b44;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+}
+
+.experiment-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.experiment-status-inline i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.experiment-status-completed,
+.experiment-completed { color: #168052; }
+.experiment-status-running { color: #3175d6; }
+.experiment-status-pending { color: #a47b22; }
+.experiment-status-failed,
+.experiment-failed { color: #c45656; }
+
+.experiment-status {
+  padding-top: 4px;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.experiment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 10px;
+  color: #758195;
+  font-size: 12px;
+}
+
+.experiment-pagination button {
+  min-height: 30px;
+  padding: 0 11px;
+  color: #536077;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.experiment-pagination button:hover:not(:disabled) {
+  color: #185b44;
+  border-color: #a9c8b9;
+}
+
+.experiment-pagination button:disabled {
+  color: #b4bbc5;
+  cursor: default;
+}
+
+.experiment-detail-panel {
+  padding-top: 16px;
+}
+
+.experiment-detail-heading {
+  align-items: flex-start;
+}
+
+.experiment-signature,
+.experiment-muted {
+  margin: 5px 0 0;
+  color: #8a95a5;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.experiment-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 9px 0 12px;
+  border-bottom: 1px solid #e7ece9;
+}
+
+.experiment-progress {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: #758195;
+  font-size: 12px;
+}
+
+.experiment-progress progress {
+  width: 100%;
+  min-width: 90px;
+  height: 9px;
+  accent-color: #126047;
+}
+
+.experiment-progress strong {
+  color: #354257;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.experiment-progress-percent {
+  color: #718096;
+  white-space: nowrap;
+}
+
+.experiment-best {
+  margin: 0;
+  padding: 8px 13px;
+  color: #26705d;
+  background: #f0f7f4;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.experiment-best strong {
+  color: #155a42;
+  font-size: 14px;
+}
+
+.experiment-results-table {
+  min-width: 900px;
+  table-layout: fixed;
+}
+
+.experiment-results-table th:nth-child(1),
+.experiment-results-table td:nth-child(1) { width: 11%; }
+.experiment-results-table th:nth-child(2),
+.experiment-results-table td:nth-child(2) { width: 22%; }
+.experiment-results-table th:nth-child(3),
+.experiment-results-table td:nth-child(3) { width: 14%; }
+.experiment-results-table th:nth-child(4),
+.experiment-results-table td:nth-child(4) { width: 12%; }
+.experiment-results-table th:nth-child(5),
+.experiment-results-table td:nth-child(5) { width: 12%; }
+.experiment-results-table th:nth-child(6),
+.experiment-results-table td:nth-child(6) { width: 17%; }
+.experiment-results-table th:nth-child(7),
+.experiment-results-table td:nth-child(7) { width: 12%; }
+
+.experiment-results-table tbody tr {
+  cursor: pointer;
+}
+
+.experiment-results-table tbody tr:hover,
+.experiment-results-table tbody tr.experiment-row-selected,
+.experiment-results-table tbody tr.experiment-row-best {
+  background: #f0f7f4;
+}
+
+.experiment-results-table tbody tr.experiment-row-selected.experiment-row-best {
+  background: #e8f3ed;
+}
+
+.experiment-cases {
+  margin-top: 17px;
+}
+
+.experiment-cases h3 {
+  margin: 0 0 7px;
+  color: #20352d;
+  font-size: 15px;
+}
+
+.experiment-case {
+  margin-top: 8px;
+  border: 1px solid #e0e8e3;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.experiment-case-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  color: #536077;
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.experiment-case-summary::-webkit-details-marker {
+  display: none;
+}
+
+.experiment-case-summary strong {
+  color: #354257;
+}
+
+.experiment-case-summary b {
+  color: #168052;
+  font-weight: 650;
+}
+
+.experiment-case-chevron {
+  color: #185b44;
+  font-size: 18px;
+  line-height: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.experiment-case:not([open]) .experiment-case-chevron {
+  transform: rotate(-90deg);
+}
+
+.experiment-case-body {
+  display: grid;
+  gap: 9px;
+  padding: 0 12px 12px;
+  border-top: 1px solid #edf0f1;
+}
+
+.experiment-case-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  padding-top: 9px;
+  color: #667286;
+  font-size: 12px;
+}
+
+.experiment-sources {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: #4e5a6b;
+  font-size: 12px;
+}
+
+.experiment-sources li {
+  display: grid;
+  gap: 4px;
+}
+
+.experiment-sources li > span {
+  color: #758195;
+  font-size: 11px;
+}
+
+.experiment-sources p {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.experiment-error {
+  margin: 9px 0;
+  padding: 8px 10px;
+  color: #a63c3c;
+  background: #fff4f2;
+  border: 1px solid #f0d5d1;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.experiment-empty {
+  padding: 24px !important;
+  color: #8a95a5 !important;
+  text-align: center;
+}
+
+@media (max-width: 820px) {
+  .experiment-create-layout {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .experiment-create-form {
+    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) 112px;
+  }
+
+  .experiment-summary-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .experiment-best {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 620px) {
+  .experiment-page {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .experiment-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .experiment-intro h1 {
+    font-size: 28px;
+  }
+
+  .experiment-intro > div > p:last-child {
+    font-size: 12px;
+  }
+
+  .experiment-count {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+
+  .experiment-panel {
+    padding: 12px 10px 10px;
+  }
+
+  .experiment-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .experiment-create-form label {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 5px;
+    white-space: normal;
+  }
+
+  .experiment-create-form .experiment-primary {
+    width: 100%;
+  }
+
+  .experiment-progress {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .experiment-progress progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .experiment-progress strong {
+    grid-column: 2;
+  }
+
+  .experiment-progress-percent {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
 </style>
