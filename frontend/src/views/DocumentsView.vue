@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ElAlert, ElButton, ElTag } from 'element-plus'
+import { ElAlert, ElButton } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 
 import ChunkDetail from '@/components/documents/ChunkDetail.vue'
 import ChunkList from '@/components/documents/ChunkList.vue'
@@ -82,6 +83,14 @@ function upsertDocument(document: DocumentItem) {
   if (documents.value.length > documentPageSize.value) documents.value.pop()
 }
 
+async function selectInitialDocument() {
+  if (selectedDocumentId.value !== undefined || documents.value.length === 0) return
+  const document = documents.value.find((item) => item.status === 'SUCCESS') ?? documents.value[0]
+  selectedDocumentId.value = document.id
+  chunkPage.value = 1
+  if (document.status === 'SUCCESS') await loadChunks()
+}
+
 async function loadDocuments() {
   const requestId = ++documentRequestId
   pageLoading.value = true
@@ -107,6 +116,7 @@ async function loadDocuments() {
       clearSelection()
     }
     syncPolling()
+    await selectInitialDocument()
   } catch (error) {
     if (requestId === documentRequestId) pageError.value = getErrorMessage(error)
   } finally {
@@ -196,6 +206,11 @@ async function pollProcessingDocuments() {
 }
 
 async function selectDocument(document: DocumentItem) {
+  if (selectedDocumentId.value === document.id) {
+    clearSelection()
+    return
+  }
+
   selectedDocumentId.value = document.id
   chunkPage.value = 1
   chunks.value = []
@@ -317,13 +332,15 @@ onUnmounted(() => {
 
 <template>
   <div class="documents-page">
-    <section class="page-intro">
+    <section class="page-intro documents-page-intro">
       <div>
-        <p class="eyebrow">KNOWLEDGE BASE</p>
-        <h2>资料管理</h2>
+        <h1>资料管理</h1>
         <p>导入法规和政策资料，查看解析状态及文本分块。</p>
       </div>
-      <ElButton :loading="pageLoading" @click="loadDocuments">刷新列表</ElButton>
+      <ElButton class="document-refresh-button" :loading="pageLoading" @click="loadDocuments">
+        <Refresh aria-hidden="true" />
+        刷新列表
+      </ElButton>
     </section>
 
     <ElAlert v-if="pageError" :title="pageError" type="error" show-icon :closable="false" />
@@ -350,12 +367,18 @@ onUnmounted(() => {
     <section v-if="selectedDocument" class="selected-document-panel">
       <div class="selected-document-heading">
         <div>
-          <p class="eyebrow">{{ selectedDocument.file_type.toUpperCase() }} DOCUMENT</p>
           <h2>{{ selectedDocument.file_name }}</h2>
+          <div class="selected-document-meta">
+            <span class="document-status" :class="`document-status-${selectedDocument.status.toLowerCase()}`">
+              <span class="document-status-dot" aria-hidden="true" />
+              {{ selectedDocument.file_type.toUpperCase() }}
+            </span>
+            <span class="selected-document-meta-divider">·</span>
+            <span class="selected-document-status-label">
+              {{ selectedDocument.status === 'SUCCESS' ? '已完成' : selectedDocument.status === 'FAILED' ? '处理失败' : '处理中' }}
+            </span>
+          </div>
         </div>
-        <ElTag :type="selectedDocument.status === 'SUCCESS' ? 'success' : selectedDocument.status === 'FAILED' ? 'danger' : 'info'">
-          {{ selectedDocument.status === 'SUCCESS' ? '已完成' : selectedDocument.status === 'FAILED' ? '处理失败' : '处理中' }}
-        </ElTag>
       </div>
 
       <p v-if="selectedDocument.status === 'PROCESSING'" class="muted-copy">

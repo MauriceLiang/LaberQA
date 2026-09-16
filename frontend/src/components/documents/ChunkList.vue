@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElPagination } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
 
 import type { ChunkItem } from '@/api/documents'
 
@@ -45,6 +46,10 @@ function summarize(content: string) {
       >
         <span class="chunk-number">Chunk {{ chunk.chunk_no }}</span>
         <span class="chunk-summary">{{ summarize(chunk.content) }}</span>
+        <span class="chunk-action">
+          查看原文
+          <ArrowRight aria-hidden="true" />
+        </span>
       </button>
     </div>
 

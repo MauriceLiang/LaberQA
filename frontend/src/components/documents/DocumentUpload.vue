@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElButton } from 'element-plus'
+import { Document, FolderOpened } from '@element-plus/icons-vue'
 
 import { uploadDocument, type DocumentUploadAccepted } from '@/api/documents'
 import { getErrorMessage } from '@/api/http'
@@ -11,7 +12,12 @@ const maxFileSize = 20 * 1024 * 1024
 const selectedFile = ref<File>()
 const uploading = ref(false)
 const errorMessage = ref('')
+const fileInput = ref<HTMLInputElement>()
 const emit = defineEmits<{ uploaded: [document: DocumentUploadAccepted] }>()
+
+function chooseFile() {
+  fileInput.value?.click()
+}
 
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
@@ -55,12 +61,13 @@ async function submitUpload() {
 
 <template>
   <section class="document-upload" aria-labelledby="upload-title">
-    <div>
+    <div class="document-upload-copy">
       <h2 id="upload-title">导入资料</h2>
       <p>支持 PDF、DOC、DOCX、TXT，单个文件不超过 20 MB。</p>
     </div>
     <div class="upload-controls">
       <input
+        ref="fileInput"
         class="file-input"
         type="file"
         accept=".pdf,.doc,.docx,.txt"
@@ -68,7 +75,12 @@ async function submitUpload() {
         :disabled="uploading"
         @change="onFileChange"
       />
-      <ElButton type="primary" :disabled="!selectedFile" :loading="uploading" @click="submitUpload">
+      <button class="file-picker-button" type="button" :disabled="uploading" @click="chooseFile">
+        <FolderOpened aria-hidden="true" />
+        <span>选择文件</span>
+      </button>
+      <ElButton class="upload-submit-button" type="primary" :disabled="!selectedFile" :loading="uploading" @click="submitUpload">
+        <Document aria-hidden="true" />
         上传资料
       </ElButton>
     </div>

@@ -96,6 +96,51 @@ describe('DocumentsView', () => {
     wrapper.unmount()
   })
 
+  it('selects the first successful document and loads its chunks for the initial view', async () => {
+    vi.mocked(documentsApi.getDocuments).mockResolvedValueOnce(page([successDocument, secondDocument]))
+    const initialChunkPage: ChunkPage = {
+      items: [{ id: 31, document_id: successDocument.id, chunk_no: 1, content: '首屏分块', vector_key: 'chunk-31' }],
+      page: 1,
+      size: 10,
+      total: 1,
+      pages: 1,
+    }
+    vi.mocked(documentsApi.getDocumentChunks).mockResolvedValueOnce(initialChunkPage)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.getComponent(DocumentList).props('selectedId')).toBe(successDocument.id)
+    expect(wrapper.getComponent(ChunkList).props('chunks')).toEqual(initialChunkPage.items)
+    expect(documentsApi.getDocumentChunks).toHaveBeenCalledWith(successDocument.id, 1, 10)
+    wrapper.unmount()
+  })
+
+  it('collapses the selected document chunks when the same row is clicked again', async () => {
+    vi.mocked(documentsApi.getDocuments).mockResolvedValueOnce(page([successDocument]))
+    vi.mocked(documentsApi.getDocumentChunks).mockResolvedValueOnce({
+      items: [{ id: 31, document_id: successDocument.id, chunk_no: 1, content: '首屏分块', vector_key: 'chunk-31' }],
+      page: 1,
+      size: 10,
+      total: 1,
+      pages: 1,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.getComponent(DocumentList).props('selectedId')).toBe(successDocument.id)
+    expect(wrapper.getComponent(ChunkList).props('chunks')).toHaveLength(1)
+
+    wrapper.getComponent(DocumentList).vm.$emit('select', successDocument)
+    await nextTick()
+
+    expect(wrapper.getComponent(DocumentList).props('selectedId')).toBeUndefined()
+    expect(wrapper.findComponent(ChunkList).exists()).toBe(false)
+    expect(wrapper.getComponent(ChunkDetail).props('modelValue')).toBe(false)
+    expect(documentsApi.getDocumentChunks).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('shows the API error when the document list cannot load', async () => {
     vi.mocked(documentsApi.getDocuments).mockRejectedValueOnce(new ApiError(500, '读取资料失败'))
     const wrapper = mountView()
@@ -168,8 +213,6 @@ describe('DocumentsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    wrapper.getComponent(DocumentList).vm.$emit('select', successDocument)
-    await flushPromises()
     wrapper.getComponent(ChunkList).vm.$emit('select', previousChunk)
     await nextTick()
     expect(wrapper.getComponent(ChunkDetail).props('modelValue')).toBe(true)
@@ -302,13 +345,14 @@ describe('DocumentsView', () => {
     vi.mocked(documentsApi.getDocuments).mockResolvedValueOnce(page([successDocument, secondDocument]))
     vi.mocked(documentsApi.getDocumentChunks)
       .mockReset()
+      .mockResolvedValueOnce({ items: [], page: 1, size: 10, total: 0, pages: 0 })
       .mockReturnValueOnce(oldRequest)
       .mockResolvedValueOnce(newChunkPage)
     const wrapper = mountView()
     await flushPromises()
 
-    wrapper.getComponent(DocumentList).vm.$emit('select', successDocument)
     wrapper.getComponent(DocumentList).vm.$emit('select', secondDocument)
+    wrapper.getComponent(DocumentList).vm.$emit('select', successDocument)
     await flushPromises()
     expect(wrapper.getComponent(ChunkList).props('chunks')).toEqual(newChunkPage.items)
 
