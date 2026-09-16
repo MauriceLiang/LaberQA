@@ -123,9 +123,8 @@ onMounted(() => void loadItems())
 
 <template>
   <section class="missing-knowledge-page" aria-labelledby="missing-knowledge-title">
-    <div class="page-intro missing-knowledge-intro">
+    <div class="page-intro documents-page-intro">
       <div>
-        <p class="eyebrow">KNOWLEDGE GAPS</p>
         <h1 id="missing-knowledge-title">知识缺口</h1>
         <p>查看因缺少可靠依据而拒答的高频问题，并维护处理状态与备注。</p>
       </div>

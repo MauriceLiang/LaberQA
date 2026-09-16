@@ -123,9 +123,8 @@ onMounted(() => {
 
 <template>
   <section class="system-page" :aria-busy="system.loading">
-    <header class="system-page-header">
+    <header class="page-intro documents-page-intro">
       <div class="system-page-heading">
-        <p class="system-eyebrow">SYSTEM STATUS</p>
         <h1>系统运行状态</h1>
         <p class="system-description">查看 API、数据库、向量索引与模型配置是否正常。</p>
       </div>
