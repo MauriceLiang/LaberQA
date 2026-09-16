@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ChatLineRound,
@@ -11,8 +11,12 @@ import {
   Search,
 } from '@element-plus/icons-vue'
 
+import type { SessionItem } from '@/api/sessions'
+import { useSessionStore } from '@/stores/session'
+
 const route = useRoute()
 const router = useRouter()
+const sessionStore = useSessionStore()
 
 const navItems = [
   { name: 'chat', label: 'AI 咨询', to: '/', icon: ChatLineRound },
@@ -23,20 +27,25 @@ const navItems = [
   { name: 'retrieval-experiments', label: '检索实验', to: '/retrieval-experiments', icon: Search },
 ]
 
-const recentConversations = [
-  { id: 'wage', title: '公司拖欠工资怎么处理' },
-  { id: 'contract', title: '未签劳动合同怎么办' },
-  { id: 'probation', title: '试用期被辞退怎么算' },
-]
-
 const isChatRoute = computed(() => route.name === 'chat')
 
-function openRecentConversation() {
+onMounted(() => {
+  void sessionStore.refreshRecentSessions()
+})
+
+function openRecentConversation(conversation: SessionItem) {
+  if (sessionStore.streaming) return
+  sessionStore.setSessionId(conversation.id)
   if (!isChatRoute.value) void router.push('/')
 }
 
-function startNewConversation() {
-  void router.push('/')
+async function startNewConversation() {
+  if (sessionStore.streaming) return
+  const saved = await sessionStore.refreshRecentSessions()
+  if (!saved) return
+
+  sessionStore.clearSession()
+  if (!isChatRoute.value) void router.push('/')
 }
 </script>
 
@@ -69,19 +78,29 @@ function startNewConversation() {
       <section class="recent-conversations" aria-labelledby="recent-conversations-title">
         <div class="recent-heading">
           <h2 id="recent-conversations-title">最近对话</h2>
-          <button class="recent-add" type="button" aria-label="新建对话" @click="startNewConversation">
+          <button
+            class="recent-add"
+            type="button"
+            aria-label="新建对话"
+            :disabled="sessionStore.streaming"
+            @click="startNewConversation"
+          >
             <CirclePlus aria-hidden="true" />
           </button>
         </div>
+        <p v-if="sessionStore.sessionsError" class="recent-error" role="alert">
+          {{ sessionStore.sessionsError }}
+        </p>
         <button
-          v-for="(conversation, index) in recentConversations"
+          v-for="conversation in sessionStore.recentSessions"
           :key="conversation.id"
           type="button"
           class="recent-conversation"
-          :class="{ 'recent-conversation-active': isChatRoute && index === 0 }"
-          @click="openRecentConversation"
+          :class="{ 'recent-conversation-active': isChatRoute && conversation.id === sessionStore.sessionId }"
+          :disabled="sessionStore.streaming"
+          @click="openRecentConversation(conversation)"
         >
-          <span>{{ conversation.title }}</span>
+          <span>{{ conversation.title || '未命名对话' }}</span>
         </button>
       </section>
 
@@ -91,7 +110,12 @@ function startNewConversation() {
     <section class="app-content">
       <header v-if="!isChatRoute" class="app-topbar">
         <div class="app-topbar-left">
-          <button class="topbar-new-chat" type="button" @click="startNewConversation">
+          <button
+            class="topbar-new-chat"
+            type="button"
+            :disabled="sessionStore.streaming"
+            @click="startNewConversation"
+          >
             <CirclePlus aria-hidden="true" />
             <span>新建对话</span>
           </button>

@@ -40,6 +40,24 @@ class SessionRepository:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT s.*
+                FROM session AS s
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM message AS m
+                    WHERE m.session_id = s.id
+                )
+                ORDER BY s.updated_at DESC, s.created_at DESC, s.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def list_messages(self, session_id: str) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(

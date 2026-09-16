@@ -18,7 +18,7 @@ defineEmits<{
       <button
         class="new-session-button"
         type="button"
-        :disabled="historyLoading"
+        :disabled="historyLoading || streaming"
         @click="$emit('newSession')"
       >
         <CirclePlus aria-hidden="true" />

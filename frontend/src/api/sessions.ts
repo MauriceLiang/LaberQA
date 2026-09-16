@@ -9,6 +9,11 @@ export async function createSession(title?: string): Promise<SessionItem> {
   return response.data
 }
 
+export async function listSessions(limit = 20): Promise<SessionItem[]> {
+  const response = await http.get<SessionItem[]>('/sessions', { params: { limit } })
+  return response.data
+}
+
 export async function getSessionMessages(sessionId: string): Promise<MessageItem[]> {
   const response = await http.get<MessageItem[]>(`/sessions/${sessionId}/messages`)
   return response.data

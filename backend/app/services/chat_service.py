@@ -76,6 +76,9 @@ class ChatService:
     def get_session(self, session_id: UUID) -> dict[str, Any] | None:
         return self.session_service.get_session(session_id)
 
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self.session_service.list_sessions(limit)
+
     def list_messages(self, session_id: UUID) -> list[dict[str, Any]]:
         return self.session_service.list_messages(session_id)
 

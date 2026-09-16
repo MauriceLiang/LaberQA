@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 
 import MessageList from '@/components/chat/MessageList.vue'
@@ -22,6 +22,8 @@ const conversation = ref<HTMLElement | null>(null)
 let activeController: AbortController | null = null
 let activeRequestId = 0
 let scrollFrame: number | null = null
+let restoreRequestId = 0
+let skipSessionRestoreFor: string | null = null
 
 const suggestions = [
   '公司拖欠工资，我应该准备什么材料？',
@@ -29,14 +31,25 @@ const suggestions = [
   '试用期被辞退，工资应该怎么算？',
 ]
 
-onMounted(() => {
-  void restoreSession()
-})
-
 onBeforeUnmount(() => {
   activeController?.abort()
+  sessionStore.setStreaming(false)
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
 })
+
+watch(
+  () => sessionStore.sessionId,
+  (sessionId) => {
+    if (sessionId && sessionId === skipSessionRestoreFor) {
+      skipSessionRestoreFor = null
+      return
+    }
+    const requestId = ++restoreRequestId
+    resetConversation()
+    if (sessionId) void restoreSession(sessionId, requestId)
+  },
+  { immediate: true },
+)
 
 watch(
   messages,
@@ -65,14 +78,12 @@ function scrollConversationToBottom() {
   if (conversation.value) conversation.value.scrollTop = conversation.value.scrollHeight
 }
 
-async function restoreSession() {
-  const sessionId = sessionStore.sessionId
-  if (!sessionId) return
-
+async function restoreSession(sessionId: string, requestId: number) {
   historyLoading.value = true
   chatError.value = ''
   try {
     const history = await getSessionMessages(sessionId)
+    if (requestId !== restoreRequestId || sessionStore.sessionId !== sessionId) return
     messages.value = history.map((message) => ({
       key: String(message.id),
       id: message.id,
@@ -85,23 +96,34 @@ async function restoreSession() {
       status: 'complete',
     }))
   } catch (error) {
+    if (requestId !== restoreRequestId || sessionStore.sessionId !== sessionId) return
     messages.value = []
     if (error instanceof ApiError && error.code === 40402) sessionStore.clearSession()
     chatError.value = `无法恢复上次对话：${getChatApiError(error)}`
   } finally {
-    historyLoading.value = false
+    if (requestId === restoreRequestId) historyLoading.value = false
   }
 }
 
-function startNewSession() {
+function resetConversation() {
   activeRequestId += 1
   activeController?.abort()
   activeController = null
   streaming.value = false
-  sessionStore.clearSession()
+  sessionStore.setStreaming(false)
   messages.value = []
   question.value = ''
   chatError.value = ''
+}
+
+async function startNewSession() {
+  if (streaming.value || historyLoading.value) return
+  const saved = await sessionStore.refreshRecentSessions()
+  if (!saved) {
+    chatError.value = `无法保存当前对话：${sessionStore.sessionsError}`
+    return
+  }
+  sessionStore.clearSession()
 }
 
 function setQuestion(value: string) {
@@ -140,6 +162,7 @@ async function sendQuestion() {
   })
   messages.value.push(userMessage, assistantMessage)
   streaming.value = true
+  sessionStore.setStreaming(true)
 
   const controller = new AbortController()
   activeController = controller
@@ -150,6 +173,7 @@ async function sendQuestion() {
       const session = await createSession(content.slice(0, 100))
       if (requestId !== activeRequestId) return
       sessionId = session.id
+      skipSessionRestoreFor = sessionId
       sessionStore.setSessionId(sessionId)
     }
     if (controller.signal.aborted) {
@@ -209,7 +233,9 @@ async function sendQuestion() {
   } finally {
     if (requestId === activeRequestId) {
       streaming.value = false
+      sessionStore.setStreaming(false)
       activeController = null
+      void sessionStore.refreshRecentSessions()
     }
   }
 }

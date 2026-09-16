@@ -3,7 +3,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-
 from app.core.errors import AppError
 from app.repositories.session_repository import SessionRepository
 from app.schemas.contracts import MessageItem, SessionItem
@@ -44,6 +43,21 @@ def test_create_session_and_validate_message_history_contract(
     assert service.list_messages(validated.id)[0]["rewritten_question"] == (
         "试用期解除劳动合同的补偿"
     )
+
+
+def test_list_sessions_returns_recent_sessions_with_messages_only(
+    service: SessionService,
+) -> None:
+    empty = service.create_session("空会话")
+    first = service.create_session("第一段咨询")
+    second = service.create_session("第二段咨询")
+    service.create_user_message(first["id"], "第一个问题")
+    service.create_user_message(second["id"], "第二个问题")
+
+    recent = service.list_sessions()
+
+    assert {session["id"] for session in recent} == {first["id"], second["id"]}
+    assert empty["id"] not in {session["id"] for session in recent}
 
 
 def test_history_is_session_scoped_and_aggregates_sources_and_tools(

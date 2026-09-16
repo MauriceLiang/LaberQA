@@ -1,8 +1,6 @@
 import tempfile
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.api.dependencies import get_chat_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
@@ -11,6 +9,7 @@ from app.services.chat_service import ChatService
 from app.services.missing_knowledge import MissingKnowledgeReason
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
+from fastapi.testclient import TestClient
 
 
 class UnreadyRetrieval:
@@ -56,6 +55,7 @@ def test_session_and_chat_routes_use_the_frozen_contract_in_process() -> None:
                     },
                 )
                 messages = client.get(f"/api/sessions/{session_id}/messages")
+                recent = client.get("/api/sessions")
                 missing = client.get(
                     "/api/sessions/00000000-0000-0000-0000-000000000000/messages"
                 )
@@ -67,6 +67,8 @@ def test_session_and_chat_routes_use_the_frozen_contract_in_process() -> None:
             assert chat.text.startswith('event: error\ndata: {"code":50301')
             assert messages.json()["data"][0]["role"] == "user"
             assert messages.json()["data"][0]["content"] == "拖欠工资应该怎么办？"
+            assert recent.status_code == 200
+            assert recent.json()["data"][0]["id"] == session_id
             assert missing.status_code == 404
             assert missing.json()["code"] == 40402
         finally:
