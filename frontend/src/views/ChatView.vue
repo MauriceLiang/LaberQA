@@ -78,6 +78,10 @@ function scrollConversationToBottom() {
   if (conversation.value) conversation.value.scrollTop = conversation.value.scrollHeight
 }
 
+function handleInputCollapsed() {
+  nextTick(() => scheduleConversationScroll())
+}
+
 async function restoreSession(sessionId: string, requestId: number) {
   historyLoading.value = true
   chatError.value = ''
@@ -293,6 +297,7 @@ function useSuggestion(value: string) {
         :answer-style="sessionStore.answerStyle"
         @update:model-value="setQuestion"
         @update:answer-style="sessionStore.answerStyle = $event"
+        @update:collapsed="handleInputCollapsed"
         @submit="sendQuestion"
         @stop="stopGeneration"
       />

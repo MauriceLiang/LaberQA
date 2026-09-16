@@ -159,6 +159,23 @@ describe('ChatView', () => {
     wrapper.unmount()
   })
 
+  it('collapses and expands the question input without losing its draft', async () => {
+    const wrapper = mountView()
+    await wrapper.get('textarea').setValue('保留这段问题')
+
+    const collapseButton = wrapper.get('.question-input-collapse')
+    await collapseButton.trigger('click')
+    expect(wrapper.find('.question-input').exists()).toBe(false)
+    const expandButton = wrapper.get('.question-input-expand')
+    expect(expandButton.attributes('aria-expanded')).toBe('false')
+
+    await expandButton.trigger('click')
+    expect(wrapper.find('.question-input').exists()).toBe(true)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('保留这段问题')
+    expect(wrapper.get('.question-input-collapse').attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('reloads messages when a different recent session is selected', async () => {
     localStorage.setItem('labor-rights-qa.session-id', session.id)
     vi.mocked(sessionsApi.getSessionMessages)

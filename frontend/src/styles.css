@@ -43,8 +43,7 @@ input {
   min-height: 0;
   flex-direction: column;
   padding: 26px 16px 22px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   background: #fbfcfa;
   border-right: 1px solid #e5ebe6;
 }
@@ -149,16 +148,21 @@ input {
 }
 
 .recent-conversations {
-  display: grid;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 3px;
   margin-top: 22px;
   margin-left: 0;
   padding-top: 26px;
+  overflow: hidden;
   border-top: 1px solid #e2e9e3;
 }
 
 .recent-heading {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 0 6px 6px;
@@ -172,10 +176,24 @@ input {
 }
 
 .recent-error {
+  flex-shrink: 0;
   margin: 0 6px 4px;
   color: #b24d4d;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.recent-conversation-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.recent-conversation-list::-webkit-scrollbar {
+  display: none;
 }
 
 .recent-add {
@@ -198,6 +216,7 @@ input {
 
 .recent-conversation {
   display: flex;
+  width: 100%;
   min-width: 0;
   min-height: 42px;
   align-items: center;
@@ -1544,6 +1563,7 @@ input {
 
 .chat-workspace {
   display: flex;
+  position: relative;
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
@@ -1634,9 +1654,11 @@ input {
 
 .message-list {
   display: flex;
+  width: min(100%, 1200px);
   min-height: 100%;
   flex-direction: column;
   gap: 24px;
+  margin: 0 auto;
   padding: 0 0 22px;
 }
 
@@ -1711,6 +1733,10 @@ input {
   gap: 10px;
 }
 
+.message-list > .message-row:first-child {
+  margin-top: 28px;
+}
+
 .message-user {
   flex-direction: row-reverse;
 }
@@ -1769,11 +1795,78 @@ input {
   border-color: #cde4d8;
 }
 
-.message-text {
+.message-text,
+.message-markdown {
   margin: 0;
   line-height: 1.75;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.message-text {
+  white-space: pre-wrap;
+}
+
+.message-markdown > * {
+  margin: 0;
+}
+
+.message-markdown > * + * {
+  margin-top: 0.85em;
+}
+
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 {
+  color: #2f4058;
+  font-size: 1em;
+  font-weight: 700;
+}
+
+.message-markdown h1,
+.message-markdown h2 {
+  font-size: 1.08em;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  padding-left: 1.45em;
+}
+
+.message-markdown li + li {
+  margin-top: 0.35em;
+}
+
+.message-markdown blockquote {
+  padding-left: 12px;
+  color: #5d6c7e;
+  border-left: 3px solid #cde4d8;
+}
+
+.message-markdown code {
+  padding: 0.08em 0.3em;
+  color: #255640;
+  background: #eaf3ed;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+
+.message-markdown pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: #edf2ef;
+  border-radius: 7px;
+  white-space: pre-wrap;
+}
+
+.message-markdown pre code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border-radius: 0;
+  font-size: inherit;
 }
 
 .message-pending,
@@ -1859,8 +1952,10 @@ input {
 
 .question-input {
   display: flex;
-  width: min(100%, 920px);
-  min-height: 168px;
+  position: relative;
+  z-index: 2;
+  width: min(100%, 1120px);
+  min-height: 112px;
   flex: 0 0 auto;
   flex-direction: column;
   margin: 0 auto;
@@ -1879,9 +1974,9 @@ input {
 .question-input textarea {
   display: block;
   width: 100%;
-  min-height: 103px;
+  min-height: 60px;
   flex: 1;
-  padding: 18px 20px 12px;
+  padding: 10px 18px 6px;
   resize: vertical;
   color: #2b3d35;
   background: transparent;
@@ -1904,8 +1999,8 @@ input {
 }
 
 .question-input-footer {
-  min-height: 56px;
-  padding: 9px 14px 9px 18px;
+  min-height: 46px;
+  padding: 6px 12px 6px 16px;
   border-top: 1px solid #edf1ee;
 }
 
@@ -1928,6 +2023,63 @@ input {
 
 .input-actions {
   justify-content: flex-end;
+}
+
+.question-input-collapse {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  color: #738279;
+  background: transparent;
+  border: 1px solid #d9e3de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.question-input-collapse:hover {
+  color: #1b6047;
+  border-color: #86b5a0;
+  background: #f5faf7;
+}
+
+.question-input-collapse:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.question-input-collapse svg {
+  width: 14px;
+  height: 14px;
+}
+
+.question-input-expand {
+  position: absolute;
+  right: 24px;
+  bottom: 12px;
+  z-index: 2;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  padding: 0;
+  color: #fff;
+  background: #1b6047;
+  border: 1px solid #1b6047;
+  border-radius: 50%;
+  box-shadow: 0 8px 22px rgb(27 96 71 / 22%);
+  cursor: pointer;
+}
+
+.question-input-expand:hover {
+  background: #15503b;
+  border-color: #15503b;
+}
+
+.question-input-expand svg {
+  width: 22px;
+  height: 22px;
 }
 
 .primary-button {
@@ -2197,6 +2349,10 @@ input {
     padding: 0 24px 12px;
   }
 
+  .message-list {
+    width: min(100%, 760px);
+  }
+
   .chat-empty-state {
     padding: clamp(72px, 10vh, 100px) 10px 24px;
   }
@@ -2229,20 +2385,20 @@ input {
   }
 
   .question-input {
-    width: min(100%, 520px);
-    min-height: 160px;
+    width: min(100%, 680px);
+    min-height: 106px;
     margin-bottom: 0;
   }
 
   .question-input textarea {
-    min-height: 108px;
-    padding: 16px 18px 10px;
+    min-height: 56px;
+    padding: 9px 16px 6px;
     font-size: 13px;
   }
 
   .question-input-footer {
-    min-height: 52px;
-    padding: 8px 12px 8px 16px;
+    min-height: 44px;
+    padding: 6px 10px 6px 14px;
   }
 
   .answer-style-switch {
@@ -2447,6 +2603,7 @@ input {
   }
 
   .message-list {
+    width: 100%;
     gap: 18px;
     padding: 0 8px 16px;
   }
@@ -2463,19 +2620,26 @@ input {
 
   .question-input {
     width: calc(100% - 16px);
-    min-height: 154px;
-    margin-bottom: 12px;
+    min-height: 102px;
+    margin-bottom: 0;
+  }
+
+  .question-input-expand {
+    right: 16px;
+    bottom: 12px;
+    width: 48px;
+    height: 48px;
   }
 
   .question-input textarea {
-    min-height: 104px;
-    padding: 15px;
+    min-height: 60px;
+    padding: 10px;
   }
 
   .question-input-footer {
-    min-height: 48px;
+    min-height: 42px;
     align-items: flex-end;
-    padding: 9px 10px 9px 11px;
+    padding: 6px 9px 6px 10px;
   }
 
   .question-input-options {
