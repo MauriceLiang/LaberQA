@@ -91,17 +91,19 @@ async function startNewConversation() {
         <p v-if="sessionStore.sessionsError" class="recent-error" role="alert">
           {{ sessionStore.sessionsError }}
         </p>
-        <button
-          v-for="conversation in sessionStore.recentSessions"
-          :key="conversation.id"
-          type="button"
-          class="recent-conversation"
-          :class="{ 'recent-conversation-active': isChatRoute && conversation.id === sessionStore.sessionId }"
-          :disabled="sessionStore.streaming"
-          @click="openRecentConversation(conversation)"
-        >
-          <span>{{ conversation.title || '未命名对话' }}</span>
-        </button>
+        <div class="recent-conversation-list">
+          <button
+            v-for="conversation in sessionStore.recentSessions"
+            :key="conversation.id"
+            type="button"
+            class="recent-conversation"
+            :class="{ 'recent-conversation-active': isChatRoute && conversation.id === sessionStore.sessionId }"
+            :disabled="sessionStore.streaming"
+            @click="openRecentConversation(conversation)"
+          >
+            <span>{{ conversation.title || '未命名对话' }}</span>
+          </button>
+        </div>
       </section>
 
       <p class="legal-note">信息辅助，不替代正式法律意见</p>

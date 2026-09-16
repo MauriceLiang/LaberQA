@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+
 import AnswerStyleSwitch from '@/components/chat/AnswerStyleSwitch.vue'
 import type { AnswerStyle } from '@/types/sse'
 
@@ -12,9 +15,17 @@ defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'update:answerStyle': [value: AnswerStyle]
+  'update:collapsed': [value: boolean]
   submit: []
   stop: []
 }>()
+
+const collapsed = ref(false)
+
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value
+  emit('update:collapsed', collapsed.value)
+}
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -25,7 +36,11 @@ function handleKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <form class="question-input" @submit.prevent="emit('submit')">
+  <form
+    v-if="!collapsed"
+    class="question-input"
+    @submit.prevent="emit('submit')"
+  >
     <label class="sr-only" for="chat-question">输入你的劳动权益问题</label>
     <textarea
       id="chat-question"
@@ -59,7 +74,31 @@ function handleKeydown(event: KeyboardEvent) {
         >
           发送问题
         </button>
+        <button
+          class="question-input-collapse"
+          type="button"
+          :aria-expanded="!collapsed"
+          aria-controls="chat-question"
+          aria-label="收起输入框"
+          title="收起输入框"
+          :disabled="streaming"
+          @click="toggleCollapsed"
+        >
+          <ArrowDown aria-hidden="true" />
+        </button>
       </span>
     </div>
   </form>
+  <button
+    v-else
+    class="question-input-expand"
+    type="button"
+    aria-expanded="false"
+    aria-controls="chat-question"
+    aria-label="展开输入框"
+    title="展开输入框"
+    @click="toggleCollapsed"
+  >
+    <ArrowUp aria-hidden="true" />
+  </button>
 </template>

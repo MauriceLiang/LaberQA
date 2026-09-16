@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { UiMessage } from '@/types/chat'
 
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 import SourcePanel from '@/components/chat/SourcePanel.vue'
 import ToolPanel from '@/components/chat/ToolPanel.vue'
 
@@ -36,7 +37,8 @@ defineProps<{
       <div class="message-content">
         <p class="message-label">{{ message.role === 'user' ? '我' : '劳动权益助手' }}</p>
         <div class="message-bubble" :class="{ 'message-bubble-streaming': message.status === 'streaming' }">
-          <p v-if="message.content" class="message-text">{{ message.content }}</p>
+          <MarkdownContent v-if="message.content && message.role === 'assistant'" :content="message.content" />
+          <p v-else-if="message.content" class="message-text">{{ message.content }}</p>
           <p v-else-if="message.status === 'streaming'" class="message-pending">正在整理资料并生成回答…</p>
         </div>
         <p v-if="message.refused" class="message-refusal-note">
