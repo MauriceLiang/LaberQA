@@ -1,6 +1,7 @@
 import { createPinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import * as chatApi from '@/api/chat'
 import * as sessionsApi from '@/api/sessions'
@@ -221,6 +222,60 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('已停止生成')
     expect(wrapper.findAll('.message-row')).toHaveLength(2)
     wrapper.unmount()
+  })
+
+  it('keeps the conversation at the bottom while a long answer streams', async () => {
+    let releaseStream!: () => void
+    const streamPaused = new Promise<void>((resolve) => {
+      releaseStream = resolve
+    })
+    vi.mocked(chatApi.streamChat).mockImplementation(async (_request, handlers) => {
+      handlers.onToken({ content: '第一段回答。' })
+      await streamPaused
+      handlers.onToken({ content: '第二段回答。' })
+      handlers.onDone({ message_id: 24, answer_style: 'plain', refused: false })
+    })
+
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    const originalCancelAnimationFrame = window.cancelAnimationFrame
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+    })
+    Object.defineProperty(window, 'cancelAnimationFrame', {
+      configurable: true,
+      value: () => undefined,
+    })
+
+    const wrapper = mountView()
+    const conversation = wrapper.get('.chat-conversation').element as HTMLElement
+    Object.defineProperty(conversation, 'scrollHeight', { configurable: true, value: 1200 })
+
+    try {
+      await wrapper.get('textarea').setValue('请给出一份详细的劳动权益说明')
+      const submitPromise = wrapper.get('form').trigger('submit')
+      await flushPromises()
+      await nextTick()
+      expect(conversation.scrollTop).toBe(1200)
+
+      releaseStream()
+      await submitPromise
+      await flushPromises()
+      expect(conversation.scrollTop).toBe(1200)
+    } finally {
+      Object.defineProperty(window, 'requestAnimationFrame', {
+        configurable: true,
+        value: originalRequestAnimationFrame,
+      })
+      Object.defineProperty(window, 'cancelAnimationFrame', {
+        configurable: true,
+        value: originalCancelAnimationFrame,
+      })
+      wrapper.unmount()
+    }
   })
 
   it('shows an SSE error without assigning a completed message id', async () => {

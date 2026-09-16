@@ -21,6 +21,7 @@ const conversation = ref<HTMLElement | null>(null)
 
 let activeController: AbortController | null = null
 let activeRequestId = 0
+let scrollFrame: number | null = null
 
 const suggestions = [
   '公司拖欠工资，我应该准备什么材料？',
@@ -34,16 +35,35 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   activeController?.abort()
+  if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
 })
 
 watch(
   messages,
   async () => {
     await nextTick()
-    if (conversation.value) conversation.value.scrollTop = conversation.value.scrollHeight
+    scheduleConversationScroll()
   },
   { deep: true },
 )
+
+function scheduleConversationScroll() {
+  if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
+
+  if (typeof window.requestAnimationFrame !== 'function') {
+    scrollConversationToBottom()
+    return
+  }
+
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = null
+    scrollConversationToBottom()
+  })
+}
+
+function scrollConversationToBottom() {
+  if (conversation.value) conversation.value.scrollTop = conversation.value.scrollHeight
+}
 
 async function restoreSession() {
   const sessionId = sessionStore.sessionId
