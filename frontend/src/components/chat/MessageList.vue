@@ -13,9 +13,8 @@ defineProps<{
 <template>
   <div class="message-list" role="log" aria-live="polite" aria-relevant="additions text">
     <div v-if="!messages.length && !historyLoading" class="chat-empty-state">
-      <div class="chat-empty-mark">劳</div>
       <h3>你好，有什么劳动权益问题？</h3>
-      <p>可以从工资、劳动合同、工时或离职问题开始描述。</p>
+      <p>请描述你遇到的情况，我们会基于相关法律法规为你解答。</p>
       <div class="suggested-questions">
         <slot name="suggestions" />
       </div>

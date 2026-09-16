@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 
-import AnswerStyleSwitch from '@/components/chat/AnswerStyleSwitch.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import QuestionInput from '@/components/chat/QuestionInput.vue'
 import SessionHeader from '@/components/chat/SessionHeader.vue'
@@ -221,11 +221,6 @@ function useSuggestion(value: string) {
     />
 
     <div class="chat-workspace">
-      <div class="chat-toolbar">
-        <span class="knowledge-hint"><span class="knowledge-dot" />基于已导入资料回答</span>
-        <AnswerStyleSwitch v-model="sessionStore.answerStyle" :disabled="streaming" />
-      </div>
-
       <p v-if="chatError" class="chat-error" role="alert">{{ chatError }}</p>
 
       <div ref="conversation" class="chat-conversation">
@@ -239,6 +234,7 @@ function useSuggestion(value: string) {
               @click="useSuggestion(suggestion)"
             >
               {{ suggestion }}
+              <ArrowRight aria-hidden="true" />
             </button>
           </template>
         </MessageList>
@@ -248,7 +244,9 @@ function useSuggestion(value: string) {
         :model-value="question"
         :disabled="historyLoading"
         :streaming="streaming"
+        :answer-style="sessionStore.answerStyle"
         @update:model-value="setQuestion"
+        @update:answer-style="sessionStore.answerStyle = $event"
         @submit="sendQuestion"
         @stop="stopGeneration"
       />
