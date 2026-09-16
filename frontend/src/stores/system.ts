@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import { getHealth, type HealthData } from '@/api/http'
+import { getErrorMessage, getHealth, type HealthData } from '@/api/http'
 
 export const useSystemStore = defineStore('system', () => {
   const health = ref<HealthData | null>(null)
@@ -14,7 +14,7 @@ export const useSystemStore = defineStore('system', () => {
     try {
       health.value = await getHealth()
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : '无法连接后端服务'
+      error.value = getErrorMessage(cause)
       health.value = null
     } finally {
       loading.value = false
