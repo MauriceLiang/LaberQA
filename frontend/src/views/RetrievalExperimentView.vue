@@ -219,9 +219,8 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="experiment-page" aria-labelledby="experiment-title">
-    <header class="experiment-intro">
+    <header class="page-intro documents-page-intro">
       <div>
-        <p class="eyebrow">RETRIEVAL STRATEGY EXPERIMENT</p>
         <h1 id="experiment-title">检索策略实验</h1>
         <p>使用同一批 60 条评测用例，对比六种固定检索配置及命中结果。</p>
       </div>
@@ -353,7 +352,6 @@ onBeforeUnmount(() => {
     <section v-if="selectedId !== undefined" class="experiment-panel experiment-detail-panel" aria-labelledby="experiment-detail-title">
       <div class="experiment-heading experiment-detail-heading">
         <div>
-          <p class="eyebrow">EXPERIMENT DETAIL</p>
           <h2 id="experiment-detail-title">{{ selectedName || '检索实验 #' + selectedId }}</h2>
           <p v-if="detail" class="experiment-signature">
             Embedding 快照：{{ detail.embedding_signature.embedding_provider }} · {{ detail.embedding_signature.embedding_model }} · {{ detail.embedding_signature.embedding_dimension }} 维
@@ -466,31 +464,6 @@ onBeforeUnmount(() => {
   color: #263548;
 }
 
-.experiment-intro {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 8px 2px 10px;
-}
-
-.experiment-intro h1 {
-  margin: 0;
-  color: #155a42;
-  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
-  font-size: clamp(30px, 2.8vw, 38px);
-  font-weight: 700;
-  letter-spacing: -0.06em;
-  line-height: 1.16;
-}
-
-.experiment-intro > div > p:last-child {
-  margin: 8px 0 0;
-  color: #7b8798;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
 .experiment-count {
   padding: 8px 15px;
   color: #185b44;
@@ -525,7 +498,7 @@ onBeforeUnmount(() => {
   line-height: 1.3;
 }
 
-.experiment-heading p:not(.eyebrow) {
+.experiment-heading p {
   margin: 5px 0 0;
   color: #758195;
   font-size: 12px;
@@ -1023,20 +996,6 @@ onBeforeUnmount(() => {
   .experiment-page {
     width: 100%;
     gap: 10px;
-  }
-
-  .experiment-intro {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 11px;
-  }
-
-  .experiment-intro h1 {
-    font-size: 28px;
-  }
-
-  .experiment-intro > div > p:last-child {
-    font-size: 12px;
   }
 
   .experiment-count {

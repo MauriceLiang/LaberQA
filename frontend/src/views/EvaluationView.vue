@@ -263,9 +263,8 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="evaluation-page" aria-labelledby="evaluation-title">
-    <header class="evaluation-intro">
+    <header class="page-intro documents-page-intro">
       <div>
-        <p class="eyebrow">QUALITY EVALUATION</p>
         <h1 id="evaluation-title">问答测评</h1>
         <p>筛选评测用例，创建后台评测批次，并查看运行结果。</p>
       </div>
@@ -449,7 +448,6 @@ onBeforeUnmount(() => {
     <section v-if="selectedRunId !== undefined" class="evaluation-panel evaluation-detail-panel" aria-labelledby="evaluation-detail-title">
       <div class="evaluation-section-heading evaluation-detail-heading">
         <div>
-          <p class="eyebrow">RUN DETAIL</p>
           <h2 id="evaluation-detail-title">批次运行结果</h2>
           <p class="evaluation-detail-run-name">{{ displayedRunName }}</p>
         </div>
@@ -528,31 +526,6 @@ onBeforeUnmount(() => {
   color: #263548;
 }
 
-.evaluation-intro {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 8px 2px 10px;
-}
-
-.evaluation-intro h1 {
-  margin: 0;
-  color: #155a42;
-  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
-  font-size: clamp(30px, 2.8vw, 38px);
-  font-weight: 700;
-  letter-spacing: -0.06em;
-  line-height: 1.16;
-}
-
-.evaluation-intro > div > p:last-child {
-  margin: 8px 0 0;
-  color: #7b8798;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
 .evaluation-count {
   display: flex;
   align-items: baseline;
@@ -593,7 +566,7 @@ onBeforeUnmount(() => {
   line-height: 1.3;
 }
 
-.evaluation-section-heading p:not(.eyebrow),
+.evaluation-section-heading p,
 .evaluation-detail-run-name {
   margin: 5px 0 0;
   color: #758195;
@@ -1115,20 +1088,6 @@ onBeforeUnmount(() => {
   .evaluation-page {
     width: 100%;
     gap: 10px;
-  }
-
-  .evaluation-intro {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 11px;
-  }
-
-  .evaluation-intro h1 {
-    font-size: 28px;
-  }
-
-  .evaluation-intro > div > p:last-child {
-    font-size: 12px;
   }
 
   .evaluation-count {

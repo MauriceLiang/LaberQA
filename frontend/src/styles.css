@@ -350,65 +350,24 @@ input {
   overflow: hidden;
 }
 
-.eyebrow {
-  margin: 0 0 4px;
-  color: #82918a;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
 .system-page {
   width: min(100%, 1060px);
   margin: 0 auto;
   color: #263548;
 }
 
-.system-page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 30px;
-  padding: 8px 0 26px;
-  border-bottom: 1px solid #e4ebe7;
-}
-
 .system-page-heading {
   min-width: 0;
-}
-
-.system-eyebrow {
-  margin: 0 0 8px;
-  color: #8995a8;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-}
-
-.system-page-heading h1 {
-  margin: 0;
-  color: #155a42;
-  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
-  font-size: clamp(32px, 3vw, 36px);
-  font-weight: 700;
-  letter-spacing: -0.06em;
-  line-height: 1.14;
-}
-
-.system-description {
-  margin: 10px 0 0;
-  color: #7b8798;
-  font-size: 14px;
-  line-height: 1.45;
 }
 
 .system-page-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: flex-end;
+  justify-content: flex-end;
   flex-direction: column;
   gap: 10px;
-  padding-top: 37px;
+  padding-top: 0;
 }
 
 .system-check-button {
@@ -601,7 +560,7 @@ input {
   line-height: 1.16;
 }
 
-.documents-page-intro > div > p:last-child {
+.documents-page-intro > div:first-child > p:last-child {
   margin: 8px 0 0;
   color: #7b8798;
   font-size: 14px;
@@ -1128,35 +1087,6 @@ input {
   margin: 0 auto;
   gap: 18px;
   color: #263548;
-}
-
-.missing-knowledge-intro {
-  align-items: flex-end;
-  padding: 2px 2px 4px;
-}
-
-.missing-knowledge-intro .eyebrow {
-  margin-bottom: 7px;
-  color: #8995a8;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-}
-
-.missing-knowledge-intro h1 {
-  margin: 0;
-  color: #155a42;
-  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
-  font-size: clamp(30px, 2.8vw, 38px);
-  font-weight: 700;
-  letter-spacing: -0.06em;
-  line-height: 1.16;
-}
-
-.missing-knowledge-intro > div > p:last-child {
-  margin: 9px 0 0;
-  color: #7b8798;
-  font-size: 14px;
-  line-height: 1.45;
 }
 
 .missing-knowledge-total {
@@ -2232,29 +2162,8 @@ input {
     width: min(100%, 760px);
   }
 
-  .system-page-header {
-    gap: 18px;
-    padding-top: 2px;
-    padding-bottom: 18px;
-  }
-
-  .system-eyebrow {
-    margin-bottom: 6px;
-    font-size: 10px;
-  }
-
-  .system-page-heading h1 {
-    font-size: clamp(28px, 3.8vw, 34px);
-  }
-
-  .system-description {
-    margin-top: 7px;
-    font-size: 13px;
-  }
-
   .system-page-actions {
     gap: 8px;
-    padding-top: 26px;
   }
 
   .system-check-button {
@@ -2318,7 +2227,7 @@ input {
     font-size: clamp(29px, 3.8vw, 34px);
   }
 
-  .documents-page-intro > div > p:last-child {
+  .documents-page-intro > div:first-child > p:last-child {
     font-size: 13px;
   }
 
@@ -2512,27 +2421,6 @@ input {
     width: 100%;
   }
 
-  .system-page-header {
-    display: grid;
-    gap: 18px;
-    padding-top: 0;
-    padding-bottom: 18px;
-  }
-
-  .system-eyebrow {
-    margin-bottom: 6px;
-    font-size: 10px;
-  }
-
-  .system-page-heading h1 {
-    font-size: 28px;
-  }
-
-  .system-description {
-    margin-top: 7px;
-    font-size: 13px;
-  }
-
   .system-page-actions {
     width: 100%;
     align-items: stretch;
@@ -2683,7 +2571,7 @@ input {
     font-size: 28px;
   }
 
-  .documents-page-intro > div > p:last-child {
+  .documents-page-intro > div:first-child > p:last-child {
     font-size: 12px;
   }
 
@@ -2748,20 +2636,6 @@ input {
   .missing-knowledge-page {
     width: 100%;
     gap: 12px;
-  }
-
-  .missing-knowledge-intro {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .missing-knowledge-intro h1 {
-    font-size: 28px;
-  }
-
-  .missing-knowledge-intro > div > p:last-child {
-    font-size: 12px;
   }
 
   .missing-knowledge-total {
