@@ -299,6 +299,7 @@ input {
 .app-main {
   width: auto;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   margin: 0;
   padding: 28px 30px 32px;
@@ -837,7 +838,8 @@ input {
 
 .chat-page {
   display: grid;
-  min-height: calc(100vh - 16px);
+  height: calc(100% + 34px);
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   margin: -32px -34px -38px;
@@ -882,8 +884,9 @@ input {
 
 .chat-workspace {
   display: flex;
+  height: 100%;
   min-height: 0;
-  height: auto;
+  flex: 1 1 auto;
   flex-direction: column;
   padding: 0 34px;
   overflow: hidden;
@@ -960,10 +963,13 @@ input {
 }
 
 .chat-conversation {
+  height: 0;
   min-height: 0;
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .message-list {
@@ -1193,11 +1199,11 @@ input {
 
 .question-input {
   display: flex;
-  width: min(100%, 970px);
-  min-height: 210px;
+  width: min(100%, 920px);
+  min-height: 168px;
   flex: 0 0 auto;
   flex-direction: column;
-  margin: 0 auto 58px;
+  margin: 0 auto;
   padding: 0;
   background: #fff;
   border: 1px solid #d9e3de;
@@ -1213,16 +1219,16 @@ input {
 .question-input textarea {
   display: block;
   width: 100%;
-  min-height: 145px;
+  min-height: 103px;
   flex: 1;
-  padding: 22px 24px 14px;
+  padding: 18px 20px 12px;
   resize: vertical;
   color: #2b3d35;
   background: transparent;
   border: 0;
   outline: 0;
   line-height: 1.6;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .question-input textarea::placeholder {
@@ -1238,8 +1244,8 @@ input {
 }
 
 .question-input-footer {
-  min-height: 62px;
-  padding: 11px 16px 11px 22px;
+  min-height: 56px;
+  padding: 9px 14px 9px 18px;
   border-top: 1px solid #edf1ee;
 }
 
@@ -1493,6 +1499,7 @@ input {
   }
 
   .chat-page {
+    height: calc(100% + 24px);
     min-height: calc(100vh - 16px);
     margin: -24px -24px -28px;
   }
@@ -1534,19 +1541,19 @@ input {
 
   .question-input {
     width: min(100%, 520px);
-    min-height: 190px;
-    margin-bottom: 38px;
+    min-height: 160px;
+    margin-bottom: 0;
   }
 
   .question-input textarea {
-    min-height: 132px;
-    padding: 18px 20px 12px;
-    font-size: 14px;
+    min-height: 108px;
+    padding: 16px 18px 10px;
+    font-size: 13px;
   }
 
   .question-input-footer {
-    min-height: 56px;
-    padding: 9px 14px 9px 18px;
+    min-height: 52px;
+    padding: 8px 12px 8px 16px;
   }
 
   .answer-style-switch {
@@ -1747,6 +1754,7 @@ input {
   }
 
   .chat-page {
+    height: 100%;
     min-height: 100vh;
     margin: -24px -16px -32px;
   }
@@ -1772,16 +1780,17 @@ input {
 
   .question-input {
     width: calc(100% - 16px);
-    min-height: 190px;
-    margin-bottom: 20px;
+    min-height: 154px;
+    margin-bottom: 12px;
   }
 
   .question-input textarea {
-    min-height: 132px;
-    padding: 17px;
+    min-height: 104px;
+    padding: 15px;
   }
 
   .question-input-footer {
+    min-height: 48px;
     align-items: flex-end;
     padding: 9px 10px 9px 11px;
   }
