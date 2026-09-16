@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Filter, Search } from '@element-plus/icons-vue'
 
 import {
   getMissingKnowledge,
@@ -107,7 +108,10 @@ async function save(item: MissingKnowledgeItem) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString()
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function topicLabel(topicKey: string) {
@@ -119,13 +123,16 @@ onMounted(() => void loadItems())
 
 <template>
   <section class="missing-knowledge-page" aria-labelledby="missing-knowledge-title">
-    <div class="page-intro">
+    <div class="page-intro missing-knowledge-intro">
       <div>
         <p class="eyebrow">KNOWLEDGE GAPS</p>
-        <h2 id="missing-knowledge-title">知识缺口</h2>
+        <h1 id="missing-knowledge-title">知识缺口</h1>
         <p>查看因缺少可靠依据而拒答的高频问题，并维护处理状态与备注。</p>
       </div>
-      <span class="missing-knowledge-count">{{ total }} 个主题</span>
+      <div class="missing-knowledge-total" aria-label="知识缺口主题数量">
+        <strong>{{ total }}</strong>
+        <span>个主题</span>
+      </div>
     </div>
 
     <p v-if="pageError" class="missing-knowledge-error" role="alert">{{ pageError }}</p>
@@ -133,62 +140,67 @@ onMounted(() => void loadItems())
 
     <section class="missing-knowledge-panel" aria-label="知识缺口列表">
       <form class="missing-knowledge-filters" @submit.prevent="applyFilters">
-        <label>
-          关键词
-          <input v-model="keywordInput" type="search" placeholder="搜索问题或缺失方向" />
+        <label class="missing-filter-control missing-filter-search">
+          <span class="sr-only">关键词</span>
+          <Search aria-hidden="true" />
+          <input v-model="keywordInput" type="search" aria-label="搜索问题或缺失方向" placeholder="搜索问题或缺失方向" />
         </label>
-        <label>
-          状态
-          <select v-model="statusFilter">
+        <label class="missing-filter-control">
+          <span class="sr-only">状态</span>
+          <select v-model="statusFilter" aria-label="按状态筛选">
             <option value="">全部状态</option>
             <option value="PENDING">待补充</option>
             <option value="RESOLVED">已补充</option>
             <option value="IGNORED">忽略</option>
           </select>
         </label>
-        <label>
-          排序
-          <select v-model="sortFilter">
+        <label class="missing-filter-control">
+          <span class="sr-only">排序</span>
+          <select v-model="sortFilter" aria-label="按拒答次数排序">
             <option value="count_desc">拒答次数</option>
             <option value="last_seen_desc">最近出现</option>
           </select>
         </label>
-        <button type="submit" class="missing-knowledge-primary">筛选</button>
+        <button type="submit" class="missing-knowledge-primary missing-filter-submit">
+          <Filter aria-hidden="true" />
+          <span>筛选</span>
+        </button>
       </form>
 
       <div class="missing-knowledge-table-wrap" :aria-busy="loading">
         <table class="missing-knowledge-table">
           <thead>
             <tr>
-              <th>主题</th>
-              <th>典型问题</th>
-              <th>次数</th>
-              <th>缺失资料方向</th>
-              <th>首次 / 最近出现</th>
-              <th>状态与备注</th>
-              <th>操作</th>
+              <th scope="col">主题</th>
+              <th scope="col">典型问题</th>
+              <th scope="col">次数</th>
+              <th scope="col">缺失资料方向</th>
+              <th scope="col">首次 / 最近出现</th>
+              <th scope="col">状态与备注</th>
+              <th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.id">
               <td>{{ topicLabel(item.topic_key) }}</td>
               <td class="question-cell">{{ item.sample_question }}</td>
-              <td><span class="missing-knowledge-count">{{ item.count }} 次</span></td>
+              <td class="missing-knowledge-row-count">{{ item.count }} 次</td>
               <td>{{ item.missing_area }}</td>
               <td class="date-cell">
-                <span>首次：{{ formatDate(item.first_seen_at) }}</span>
-                <span>最近：{{ formatDate(item.last_seen_at) }}</span>
+                <span>{{ formatDate(item.first_seen_at) }} <b>/</b></span>
+                <span>{{ formatDate(item.last_seen_at) }}</span>
               </td>
               <td class="edit-cell">
-                <select v-model="drafts[item.id].status" :aria-label="`更新 ${topicLabel(item.topic_key)} 的状态`">
+                <select class="missing-status-select" v-model="drafts[item.id].status" :aria-label="`更新 ${topicLabel(item.topic_key)} 的状态`">
                   <option value="PENDING">待补充</option>
                   <option value="RESOLVED">已补充</option>
                   <option value="IGNORED">忽略</option>
                 </select>
                 <textarea
                   v-model="drafts[item.id].note"
+                  class="missing-note-input"
                   :aria-label="`更新 ${topicLabel(item.topic_key)} 的备注`"
-                  rows="2"
+                  rows="1"
                   placeholder="添加处理备注"
                 />
               </td>
