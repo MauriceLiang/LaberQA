@@ -101,7 +101,7 @@ function startNewConversation() {
           </span>
         </div>
       </header>
-      <main class="app-main">
+      <main class="app-main" :class="{ 'app-main-chat': isChatRoute }">
         <router-view />
       </main>
     </section>

@@ -13,8 +13,8 @@
 
 body {
   min-width: 360px;
-  min-height: 100vh;
   margin: 0;
+  overflow: hidden;
   background: #fff;
 }
 
@@ -26,8 +26,10 @@ input {
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
   background: #fff;
@@ -38,10 +40,17 @@ input {
 .app-sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   padding: 26px 16px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #fbfcfa;
   border-right: 1px solid #e5ebe6;
+}
+
+.app-sidebar > * {
+  flex-shrink: 0;
 }
 
 .brand-lockup {
@@ -227,6 +236,7 @@ input {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   background: #fff;
 }
 
@@ -234,6 +244,7 @@ input {
 .session-header {
   display: flex;
   min-height: 80px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -303,6 +314,14 @@ input {
   flex: 1;
   margin: 0;
   padding: 28px 30px 32px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-main.app-main-chat {
+  padding: 0;
+  overflow: hidden;
 }
 
 .eyebrow {
@@ -1472,11 +1491,11 @@ input {
 
 .chat-page {
   display: grid;
-  height: calc(100% + 34px);
+  height: 100%;
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
-  margin: -32px -34px -38px;
+  margin: 0;
 }
 
 .session-header {
@@ -1522,7 +1541,7 @@ input {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  padding: 0 34px;
+  padding: 0 34px 12px;
   overflow: hidden;
 }
 
@@ -2167,14 +2186,8 @@ input {
     width: 220px;
   }
 
-  .chat-page {
-    height: calc(100% + 24px);
-    min-height: calc(100vh - 16px);
-    margin: -24px -24px -28px;
-  }
-
   .chat-workspace {
-    padding: 0 24px;
+    padding: 0 24px 12px;
   }
 
   .chat-empty-state {
@@ -2253,9 +2266,9 @@ input {
   }
 
   .app-shell {
-    display: block;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     width: 100%;
-    min-height: 100vh;
     margin: 0;
     border-radius: 0;
     box-shadow: none;
@@ -2420,12 +2433,6 @@ input {
 
   .chat-workspace {
     padding: 0;
-  }
-
-  .chat-page {
-    height: 100%;
-    min-height: 100vh;
-    margin: -24px -16px -32px;
   }
 
   .chat-empty-state {
