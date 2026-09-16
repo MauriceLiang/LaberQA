@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Search } from '@element-plus/icons-vue'
 
 import {
   createEvaluationRun,
@@ -225,6 +226,29 @@ function formatFlag(value: boolean | null) {
   return value === null ? '—' : value ? '是' : '否'
 }
 
+function formatCaseId(id: number) {
+  return `#${String(id).padStart(3, '0')}`
+}
+
+function formatCreatedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function progressPercent(current: number, total: number) {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((current / total) * 100))
+}
+
+function statusClass(status: EvaluationJobStatus | undefined) {
+  if (status === 'COMPLETED') return 'evaluation-status-completed'
+  if (status === 'FAILED') return 'evaluation-status-failed'
+  if (status === 'RUNNING') return 'evaluation-status-running'
+  return 'evaluation-status-pending'
+}
+
 onMounted(() => {
   void loadCases()
   void loadRuns()
@@ -239,40 +263,45 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="evaluation-page" aria-labelledby="evaluation-title">
-    <div class="page-intro">
+    <header class="evaluation-intro">
       <div>
         <p class="eyebrow">QUALITY EVALUATION</p>
-        <h2 id="evaluation-title">问答评测</h2>
-        <p>筛选评测用例，按指定范围创建后台评测批次，并查看运行进度与逐题结果。</p>
+        <h1 id="evaluation-title">问答测评</h1>
+        <p>筛选评测用例，创建后台评测批次，并查看运行结果。</p>
       </div>
-      <span class="evaluation-count">已选 {{ selectedCaseIds.size }} 条用例</span>
-    </div>
+      <div class="evaluation-count" aria-label="已选择的评测用例数量">
+        <span>已选</span>
+        <strong>{{ selectedCaseIds.size }}</strong>
+        <span>条用例</span>
+      </div>
+    </header>
 
     <section class="evaluation-panel" aria-labelledby="evaluation-cases-title">
       <div class="evaluation-section-heading">
         <div>
-          <h3 id="evaluation-cases-title">评测用例</h3>
-          <p>不选择用例时，批次将执行全部 60 条。</p>
+          <h2 id="evaluation-cases-title">评测用例</h2>
+          <p>不选择用例时，将执行全部 60 条</p>
         </div>
       </div>
       <p v-if="casesError" class="evaluation-error" role="alert">{{ casesError }}</p>
       <form class="evaluation-filters" @submit.prevent="applyCaseFilters">
-        <label>
-          主题
-          <input v-model="topicInput" type="search" placeholder="输入主题筛选" />
+        <label class="evaluation-filter-control evaluation-filter-search">
+          <span class="sr-only">搜索主题或问题</span>
+          <Search aria-hidden="true" />
+          <input v-model="topicInput" type="search" placeholder="搜索主题或问题关键词" />
         </label>
-        <label>
-          预期类型
-          <select v-model="expectedTypeFilter">
-            <option value="">全部</option>
+        <label class="evaluation-filter-control">
+          <span class="sr-only">预期类型</span>
+          <select v-model="expectedTypeFilter" aria-label="预期类型">
+            <option value="">预期类型</option>
             <option value="ANSWER">应回答</option>
             <option value="REJECT">应拒答</option>
           </select>
         </label>
-        <label>
-          对话轮数
-          <select v-model="multiTurnFilter">
-            <option value="">全部</option>
+        <label class="evaluation-filter-control">
+          <span class="sr-only">对话轮数</span>
+          <select v-model="multiTurnFilter" aria-label="对话轮数">
+            <option value="">对话轮数</option>
             <option value="false">单轮</option>
             <option value="true">多轮</option>
           </select>
@@ -281,37 +310,44 @@ onBeforeUnmount(() => {
       </form>
 
       <div class="evaluation-table-wrap" :aria-busy="loadingCases">
-        <table class="evaluation-table">
+        <table class="evaluation-table evaluation-case-table">
           <thead>
             <tr>
-              <th><input aria-label="选择本页全部用例" type="checkbox" :checked="selectedPageFully" @change="toggleCurrentPage" /></th>
-              <th>ID</th>
-              <th>主题</th>
-              <th>问题轮次</th>
-              <th>预期</th>
-              <th>多轮</th>
-              <th>合规提示</th>
+              <th scope="col" class="evaluation-select-cell">
+                <input aria-label="选择本页全部用例" type="checkbox" :checked="selectedPageFully" @change="toggleCurrentPage" />
+              </th>
+              <th scope="col">ID</th>
+              <th scope="col">主题</th>
+              <th scope="col">问题</th>
+              <th scope="col">问题轮次</th>
+              <th scope="col">预期</th>
+              <th scope="col">多轮</th>
+              <th scope="col">合规提示</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in cases" :key="item.id">
-              <td><input :aria-label="`选择用例 ${item.id}`" type="checkbox" :checked="selectedCaseIds.has(item.id)" @change="toggleCase(item.id, ($event.target as HTMLInputElement).checked)" /></td>
-              <td>{{ item.id }}</td>
-              <td>{{ item.topic }}</td>
-              <td class="evaluation-turns">{{ item.turns.join(' → ') }}</td>
+              <td class="evaluation-select-cell">
+                <input :aria-label="`选择用例 ${item.id}`" type="checkbox" :checked="selectedCaseIds.has(item.id)" @change="toggleCase(item.id, ($event.target as HTMLInputElement).checked)" />
+              </td>
+              <td class="evaluation-case-id">{{ formatCaseId(item.id) }}</td>
+              <td class="evaluation-case-topic">{{ item.topic }}</td>
+              <td class="evaluation-case-question">{{ item.turns.join(' / ') }}</td>
+              <td class="evaluation-case-rounds">{{ item.turns.length }}</td>
               <td>{{ item.expected_type === 'ANSWER' ? '应回答' : '应拒答' }}</td>
               <td>{{ item.turns.length > 1 ? '是' : '否' }}</td>
               <td>{{ item.should_show_compliance ? '需要' : '不需要' }}</td>
             </tr>
             <tr v-if="!loadingCases && cases.length === 0">
-              <td colspan="7" class="evaluation-empty">暂无符合条件的用例</td>
+              <td colspan="8" class="evaluation-empty">暂无符合条件的用例</td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="evaluation-pagination">
         <span>共 {{ caseTotal }} 条，第 {{ casePage }} / {{ casePages || 1 }} 页</span>
-        <label>每页
+        <label>
+          每页
           <select :value="caseSize" @change="caseSize = Number(($event.target as HTMLSelectElement).value); casePage = 1; void loadCases()">
             <option :value="10">10</option>
             <option :value="20">20</option>
@@ -323,36 +359,38 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="evaluation-panel" aria-labelledby="evaluation-create-title">
-      <div class="evaluation-section-heading">
-        <div>
-          <h3 id="evaluation-create-title">创建评测批次</h3>
-          <p>选择用例后仅运行所选项；未选择时运行全量用例。</p>
+    <section class="evaluation-panel evaluation-create-panel" aria-labelledby="evaluation-create-title">
+      <div class="evaluation-create-layout">
+        <div class="evaluation-section-heading">
+          <div>
+            <h2 id="evaluation-create-title">创建评测批次</h2>
+            <p>选择用例后仅运行所选项</p>
+          </div>
         </div>
+        <form class="evaluation-create-form" @submit.prevent="createRun">
+          <label>
+            <span>批次名称</span>
+            <input v-model="runName" maxlength="100" placeholder="例如：正式评测-20260915" />
+          </label>
+          <label>
+            <span>回答风格</span>
+            <select v-model="answerStyle">
+              <option value="plain">通俗版</option>
+              <option value="legal">严谨版</option>
+            </select>
+          </label>
+          <button class="evaluation-primary" type="submit" :disabled="creatingRun">
+            {{ creatingRun ? '创建中…' : '创建批次' }}
+          </button>
+        </form>
       </div>
-      <form class="evaluation-create-form" @submit.prevent="createRun">
-        <label>
-          批次名称
-          <input v-model="runName" maxlength="100" placeholder="例如：正式评测-20260915" />
-        </label>
-        <label>
-          回答风格
-          <select v-model="answerStyle">
-            <option value="plain">通俗版</option>
-            <option value="legal">严谨版</option>
-          </select>
-        </label>
-        <button class="evaluation-primary" type="submit" :disabled="creatingRun">
-          {{ creatingRun ? '创建中…' : '创建批次' }}
-        </button>
-      </form>
       <p v-if="createError" class="evaluation-error" role="alert">{{ createError }}</p>
     </section>
 
     <section class="evaluation-panel" aria-labelledby="evaluation-runs-title">
       <div class="evaluation-section-heading">
         <div>
-          <h3 id="evaluation-runs-title">评测批次</h3>
+          <h2 id="evaluation-runs-title">评测批次</h2>
           <p>选择批次查看进度；运行中的任务每 2 秒更新一次。</p>
         </div>
       </div>
@@ -360,7 +398,15 @@ onBeforeUnmount(() => {
       <p v-if="detailError" class="evaluation-error" role="alert">{{ detailError }}</p>
       <div class="evaluation-table-wrap" :aria-busy="loadingRuns">
         <table class="evaluation-table evaluation-run-table">
-          <thead><tr><th>批次</th><th>状态</th><th>进度</th><th>创建时间</th></tr></thead>
+          <thead>
+            <tr>
+              <th scope="col" class="evaluation-select-cell"><span class="sr-only">选择</span></th>
+              <th scope="col">批次</th>
+              <th scope="col">状态</th>
+              <th scope="col">进度</th>
+              <th scope="col">创建时间</th>
+            </tr>
+          </thead>
           <tbody>
             <tr
               v-for="run in runs"
@@ -368,13 +414,27 @@ onBeforeUnmount(() => {
               :class="{ 'evaluation-run-selected': run.id === selectedRunId }"
               @click="selectRun(run)"
             >
+              <td class="evaluation-select-cell">
+                <input
+                  :aria-label="`选择评测批次 ${run.name}`"
+                  type="radio"
+                  name="evaluation-run"
+                  :checked="run.id === selectedRunId"
+                  @click.stop
+                  @change="selectRun(run)"
+                />
+              </td>
               <td><button class="evaluation-link" type="button" @click.stop="selectRun(run)">{{ run.name }}</button></td>
-              <td>{{ formatStatus(run.status) }}</td>
+              <td>
+                <span class="evaluation-status-inline" :class="statusClass(run.status)">
+                  <i aria-hidden="true" />{{ formatStatus(run.status) }}
+                </span>
+              </td>
               <td>{{ run.progress_current }} / {{ run.progress_total }}</td>
-              <td>{{ new Date(run.created_at).toLocaleString() }}</td>
+              <td>{{ formatCreatedAt(run.created_at) }}</td>
             </tr>
             <tr v-if="!loadingRuns && runs.length === 0">
-              <td colspan="4" class="evaluation-empty">暂无评测批次</td>
+              <td colspan="5" class="evaluation-empty">暂无评测批次</td>
             </tr>
           </tbody>
         </table>
@@ -386,20 +446,31 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="selectedRunId !== undefined" class="evaluation-panel" aria-labelledby="evaluation-detail-title">
-      <div class="evaluation-section-heading">
+    <section v-if="selectedRunId !== undefined" class="evaluation-panel evaluation-detail-panel" aria-labelledby="evaluation-detail-title">
+      <div class="evaluation-section-heading evaluation-detail-heading">
         <div>
           <p class="eyebrow">RUN DETAIL</p>
-          <h3 id="evaluation-detail-title">{{ displayedRunName }}</h3>
+          <h2 id="evaluation-detail-title">批次运行结果</h2>
+          <p class="evaluation-detail-run-name">{{ displayedRunName }}</p>
         </div>
-        <span class="evaluation-status">{{ formatStatus(displayedStatus) }}</span>
+        <span class="evaluation-status" :class="statusClass(displayedStatus)">{{ formatStatus(displayedStatus) }}</span>
       </div>
       <p v-if="runDetail?.error_message" class="evaluation-error" role="alert">{{ runDetail.error_message }}</p>
       <p v-if="loadingDetail && !runDetail" class="evaluation-muted">正在读取评测详情…</p>
       <template v-if="runDetail">
         <div class="evaluation-progress" aria-label="评测进度">
-          <span>{{ runDetail.progress_current }} / {{ runDetail.progress_total }} 题</span>
-          <progress :value="runDetail.progress_current" :max="Math.max(runDetail.progress_total, 1)" />
+          <div class="evaluation-progress-status">
+            <span>状态</span>
+            <span class="evaluation-status-inline" :class="statusClass(runDetail.status)">
+              <i aria-hidden="true" />{{ formatStatus(runDetail.status) }}
+            </span>
+          </div>
+          <div class="evaluation-progress-track">
+            <span>进度</span>
+            <strong>{{ runDetail.progress_current }} / {{ runDetail.progress_total }} 题</strong>
+            <progress :value="runDetail.progress_current" :max="Math.max(runDetail.progress_total, 1)" />
+          </div>
+          <span class="evaluation-progress-percent">{{ progressPercent(runDetail.progress_current, runDetail.progress_total) }}%</span>
         </div>
         <div v-if="runDetail.metrics" class="evaluation-metrics" aria-label="评测指标">
           <div><span>回答正确率</span><strong>{{ formatRate(runDetail.metrics.accuracy) }}</strong></div>
@@ -411,24 +482,26 @@ onBeforeUnmount(() => {
         <div v-else-if="terminalStatus(runDetail.status)" class="evaluation-muted">此批次没有可计算的指标。</div>
 
         <div class="evaluation-results">
-          <h4>逐题结果（{{ runDetail.results.length }}）</h4>
+          <h3>逐题结果（{{ runDetail.results.length }}）</h3>
           <div v-if="runDetail.results.length === 0" class="evaluation-muted">任务完成后会显示逐题回答、引用与判定。</div>
           <article v-for="result in runDetail.results" :key="result.case_id" class="evaluation-result">
             <div class="evaluation-result-heading">
+              <span class="evaluation-result-chevron" aria-hidden="true">›</span>
               <strong>用例 #{{ result.case_id }}</strong>
+              <span>·</span>
               <span :class="result.status === 'FAILED' ? 'evaluation-failed' : 'evaluation-completed'">
                 {{ result.status === 'FAILED' ? '单题失败' : '已评估' }}
               </span>
-              <span v-if="result.latency_ms !== null">耗时 {{ result.latency_ms }} ms</span>
+              <span v-if="result.latency_ms !== null">· {{ result.latency_ms }} ms</span>
             </div>
             <p v-if="result.error_message" class="evaluation-error">{{ result.error_message }}</p>
             <p v-if="result.answer" class="evaluation-answer">{{ result.answer }}</p>
             <div class="evaluation-result-flags">
-              <span>正确：{{ formatFlag(result.correct) }}</span>
-              <span>拒答：{{ formatFlag(result.refused) }}</span>
-              <span>引用命中：{{ formatFlag(result.source_hit) }}</span>
-              <span>多轮通过：{{ formatFlag(result.multi_turn_correct) }}</span>
-              <span>合规提示：{{ formatFlag(result.compliance_hit) }}</span>
+              <span>正确：<b>{{ formatFlag(result.correct) }}</b></span>
+              <span>拒答：<b>{{ formatFlag(result.refused) }}</b></span>
+              <span>引用命中：<b>{{ formatFlag(result.source_hit) }}</b></span>
+              <span>多轮通过：<b>{{ formatFlag(result.multi_turn_correct) }}</b></span>
+              <span>合规提示：<b>{{ formatFlag(result.compliance_hit) }}</b></span>
             </div>
             <details v-if="result.citations.length" class="evaluation-citations">
               <summary>引用来源（{{ result.citations.length }}）</summary>
@@ -447,52 +520,671 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.evaluation-page { display: grid; gap: 20px; }
-.evaluation-count { color: #26705d; font-size: 13px; font-weight: 650; white-space: nowrap; }
-.evaluation-panel { padding: 22px; background: #fff; border: 1px solid #e8edf3; border-radius: 16px; }
-.evaluation-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-.evaluation-section-heading h3 { margin: 0; font-size: 17px; }
-.evaluation-section-heading p:not(.eyebrow) { margin: 6px 0 0; color: #758195; font-size: 13px; }
-.evaluation-filters, .evaluation-create-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
-.evaluation-filters label, .evaluation-create-form label, .evaluation-pagination label { display: grid; gap: 6px; color: #667286; font-size: 13px; }
-.evaluation-filters input, .evaluation-filters select, .evaluation-create-form input, .evaluation-create-form select, .evaluation-pagination select { min-height: 36px; padding: 7px 9px; color: #202938; background: #fff; border: 1px solid #d8dee8; border-radius: 7px; font: inherit; }
-.evaluation-filters input { min-width: 190px; }
-.evaluation-create-form input { min-width: 270px; }
-.evaluation-primary { min-height: 36px; padding: 0 14px; color: #fff; background: #26705d; border: 0; border-radius: 7px; cursor: pointer; }
-.evaluation-primary:disabled { opacity: .6; cursor: default; }
-.evaluation-table-wrap { margin-top: 16px; overflow-x: auto; }
-.evaluation-table { width: 100%; border-collapse: collapse; text-align: left; }
-.evaluation-table th, .evaluation-table td { padding: 11px 9px; border-bottom: 1px solid #edf0f4; vertical-align: top; }
-.evaluation-table th { color: #758195; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.evaluation-table td { color: #4e5a6b; font-size: 13px; }
-.evaluation-table input[type='checkbox'] { accent-color: #26705d; }
-.evaluation-turns { min-width: 260px; max-width: 440px; }
-.evaluation-empty { padding: 26px !important; color: #8a95a5 !important; text-align: center; }
-.evaluation-pagination { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; color: #758195; font-size: 13px; }
-.evaluation-pagination button { min-height: 34px; padding: 0 10px; color: #4e5a6b; background: #fff; border: 1px solid #d8dee8; border-radius: 7px; cursor: pointer; }
-.evaluation-pagination button:disabled { color: #b4bbc5; cursor: default; }
-.evaluation-run-table tbody tr { cursor: pointer; }
-.evaluation-run-table tbody tr:hover, .evaluation-run-table tbody tr.evaluation-run-selected { background: #f0f7f4; }
-.evaluation-link { padding: 0; color: #26705d; font: inherit; font-weight: 650; text-align: left; background: none; border: 0; cursor: pointer; }
-.evaluation-status { padding: 5px 10px; color: #26705d; background: #edf7f3; border-radius: 999px; font-size: 12px; font-weight: 650; }
-.evaluation-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; color: #667286; font-size: 13px; }
-.evaluation-progress progress { width: 100%; height: 10px; accent-color: #26705d; }
-.evaluation-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 18px; }
-.evaluation-metrics div { display: grid; gap: 8px; padding: 14px; background: #f5f8f7; border-radius: 10px; }
-.evaluation-metrics span { color: #758195; font-size: 12px; }
-.evaluation-metrics strong { color: #26705d; font-size: 20px; }
-.evaluation-results { margin-top: 22px; }
-.evaluation-results h4 { margin: 0 0 12px; font-size: 15px; }
-.evaluation-result { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid #edf0f4; }
-.evaluation-result-heading, .evaluation-result-flags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; color: #667286; font-size: 12px; }
-.evaluation-result-heading strong { color: #202938; font-size: 13px; }
-.evaluation-completed { color: #26705d; }
+.evaluation-page {
+  display: grid;
+  width: min(100%, 1100px);
+  margin: 0 auto;
+  gap: 12px;
+  color: #263548;
+}
+
+.evaluation-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 8px 2px 10px;
+}
+
+.evaluation-intro h1 {
+  margin: 0;
+  color: #155a42;
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  font-size: clamp(30px, 2.8vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.06em;
+  line-height: 1.16;
+}
+
+.evaluation-intro > div > p:last-child {
+  margin: 8px 0 0;
+  color: #7b8798;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.evaluation-count {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding-bottom: 5px;
+  color: #526079;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.evaluation-count strong {
+  color: #155a42;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.evaluation-panel {
+  min-width: 0;
+  padding: 14px 14px 12px;
+  background: #fff;
+  border: 1px solid #e1e9e4;
+  border-radius: 9px;
+}
+
+.evaluation-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 11px;
+}
+
+.evaluation-section-heading h2 {
+  margin: 0;
+  color: #20352d;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.evaluation-section-heading p:not(.eyebrow),
+.evaluation-detail-run-name {
+  margin: 5px 0 0;
+  color: #758195;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evaluation-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 180px 180px 90px;
+  gap: 10px;
+}
+
+.evaluation-filter-control {
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  color: #667286;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.evaluation-filter-control svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: #34455d;
+}
+
+.evaluation-filter-control input,
+.evaluation-filter-control select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  color: #354257;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
+.evaluation-filter-control input::placeholder {
+  color: #9aa5b4;
+}
+
+.evaluation-primary {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #fff;
+  background: #126047;
+  border: 1px solid #126047;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.evaluation-primary:hover:not(:disabled) {
+  background: #0f523c;
+  border-color: #0f523c;
+}
+
+.evaluation-primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.evaluation-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.evaluation-table {
+  width: 100%;
+  min-width: 900px;
+  border-spacing: 0;
+  text-align: left;
+}
+
+.evaluation-table th,
+.evaluation-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf0f1;
+  vertical-align: middle;
+}
+
+.evaluation-table th {
+  color: #68758a;
+  background: #f4f6f5;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.evaluation-table th:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.evaluation-table th:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.evaluation-table td {
+  color: #354257;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evaluation-case-table th:nth-child(1),
+.evaluation-case-table td:nth-child(1) { width: 42px; }
+.evaluation-case-table th:nth-child(2),
+.evaluation-case-table td:nth-child(2) { width: 58px; }
+.evaluation-case-table th:nth-child(3),
+.evaluation-case-table td:nth-child(3) { width: 150px; }
+.evaluation-case-table th:nth-child(4),
+.evaluation-case-table td:nth-child(4) { width: 27%; }
+.evaluation-case-table th:nth-child(5),
+.evaluation-case-table td:nth-child(5) { width: 72px; }
+.evaluation-case-table th:nth-child(6),
+.evaluation-case-table td:nth-child(6) { width: 76px; }
+.evaluation-case-table th:nth-child(7),
+.evaluation-case-table td:nth-child(7) { width: 62px; }
+.evaluation-case-table th:nth-child(8),
+.evaluation-case-table td:nth-child(8) { width: 82px; }
+
+.evaluation-select-cell {
+  text-align: center;
+}
+
+.evaluation-table input[type='checkbox'],
+.evaluation-table input[type='radio'] {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #146348;
+  cursor: pointer;
+}
+
+.evaluation-case-id,
+.evaluation-case-rounds {
+  color: #536077;
+  white-space: nowrap;
+}
+
+.evaluation-case-topic {
+  font-weight: 600;
+}
+
+.evaluation-case-question {
+  color: #354257;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-empty {
+  padding: 24px !important;
+  color: #8a95a5 !important;
+  text-align: center;
+}
+
+.evaluation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 10px;
+  color: #758195;
+  font-size: 12px;
+}
+
+.evaluation-pagination label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.evaluation-pagination select {
+  min-height: 30px;
+  padding: 0 8px;
+  color: #354257;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.evaluation-pagination button {
+  min-height: 30px;
+  padding: 0 11px;
+  color: #536077;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.evaluation-pagination button:hover:not(:disabled) {
+  color: #185b44;
+  border-color: #a9c8b9;
+}
+
+.evaluation-pagination button:disabled {
+  color: #b4bbc5;
+  cursor: default;
+}
+
+.evaluation-create-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.evaluation-create-layout .evaluation-section-heading {
+  margin: 0;
+}
+
+.evaluation-create-form {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(150px, 180px) 126px;
+  align-items: center;
+  gap: 10px;
+}
+
+.evaluation-create-form label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #758195;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.evaluation-create-form input,
+.evaluation-create-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #354257;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
+  outline: 0;
+  font: inherit;
+}
+
+.evaluation-create-form input::placeholder {
+  color: #a0a9b5;
+}
+
+.evaluation-run-table {
+  min-width: 700px;
+}
+
+.evaluation-run-table th:nth-child(1),
+.evaluation-run-table td:nth-child(1) { width: 42px; }
+.evaluation-run-table th:nth-child(2),
+.evaluation-run-table td:nth-child(2) { width: 42%; }
+.evaluation-run-table th:nth-child(3),
+.evaluation-run-table td:nth-child(3) { width: 18%; }
+.evaluation-run-table th:nth-child(4),
+.evaluation-run-table td:nth-child(4) { width: 18%; }
+.evaluation-run-table th:nth-child(5),
+.evaluation-run-table td:nth-child(5) { width: 22%; }
+
+.evaluation-run-table tbody tr {
+  cursor: pointer;
+}
+
+.evaluation-run-table tbody tr:hover,
+.evaluation-run-table tbody tr.evaluation-run-selected {
+  background: #f0f7f4;
+}
+
+.evaluation-link {
+  padding: 0;
+  color: #185b44;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+}
+
+.evaluation-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.evaluation-status-inline i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.evaluation-status-completed,
+.evaluation-completed { color: #168052; }
+.evaluation-status-running { color: #3175d6; }
+.evaluation-status-pending { color: #a47b22; }
+.evaluation-status-failed,
 .evaluation-failed { color: #c45656; }
-.evaluation-answer { margin: 0; color: #4e5a6b; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
-.evaluation-citations { color: #26705d; font-size: 12px; }
-.evaluation-citations ul { display: grid; gap: 8px; padding-left: 18px; color: #4e5a6b; }
-.evaluation-citations li span { display: block; margin-top: 4px; color: #758195; line-height: 1.6; }
-.evaluation-error { margin: 10px 0; padding: 10px 12px; color: #a63c3c; background: #fff1f0; border: 1px solid #f3d0ce; border-radius: 8px; font-size: 13px; }
-.evaluation-muted { margin: 12px 0 0; color: #8a95a5; font-size: 13px; }
-@media (max-width: 700px) { .evaluation-panel { padding: 16px; } .evaluation-filters, .evaluation-create-form { align-items: stretch; } .evaluation-filters label, .evaluation-create-form label { flex: 1 1 100%; } }
+
+.evaluation-detail-panel {
+  padding-top: 16px;
+}
+
+.evaluation-detail-heading {
+  align-items: flex-start;
+}
+
+.evaluation-detail-heading .evaluation-status {
+  padding-top: 4px;
+}
+
+.evaluation-status {
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.evaluation-progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 13px;
+  border-bottom: 1px solid #e7ece9;
+  color: #758195;
+  font-size: 12px;
+}
+
+.evaluation-progress-status,
+.evaluation-progress-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.evaluation-progress-track {
+  min-width: 0;
+}
+
+.evaluation-progress-track progress {
+  width: min(100%, 520px);
+  min-width: 90px;
+  height: 9px;
+  margin-left: 3px;
+  accent-color: #126047;
+}
+
+.evaluation-progress-track strong {
+  color: #354257;
+  font-weight: 500;
+}
+
+.evaluation-progress-percent {
+  color: #718096;
+  white-space: nowrap;
+}
+
+.evaluation-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.evaluation-metrics div {
+  display: grid;
+  gap: 7px;
+  padding: 0 14px;
+  border-left: 1px solid #dfe6e2;
+  text-align: center;
+}
+
+.evaluation-metrics div:first-child {
+  border-left: 0;
+}
+
+.evaluation-metrics span {
+  color: #758195;
+  font-size: 11px;
+}
+
+.evaluation-metrics strong {
+  color: #155a42;
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.evaluation-results {
+  margin-top: 18px;
+}
+
+.evaluation-results h3 {
+  margin: 0 0 9px;
+  color: #20352d;
+  font-size: 15px;
+}
+
+.evaluation-result {
+  display: grid;
+  gap: 9px;
+  padding: 10px 10px 11px;
+  border: 1px solid #e0e8e3;
+  border-radius: 7px;
+}
+
+.evaluation-result-heading,
+.evaluation-result-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  color: #667286;
+  font-size: 12px;
+}
+
+.evaluation-result-heading strong {
+  color: #354257;
+  font-size: 12px;
+}
+
+.evaluation-result-chevron {
+  color: #526079;
+  font-size: 21px;
+  line-height: 0.7;
+}
+
+.evaluation-result-flags b {
+  color: #168052;
+  font-weight: 650;
+}
+
+.evaluation-answer {
+  margin: 0;
+  color: #4e5a6b;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.evaluation-citations {
+  color: #185b44;
+  font-size: 12px;
+}
+
+.evaluation-citations ul {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #4e5a6b;
+}
+
+.evaluation-citations li span {
+  display: block;
+  margin-top: 3px;
+  color: #758195;
+  line-height: 1.55;
+}
+
+.evaluation-error {
+  margin: 9px 0;
+  padding: 8px 10px;
+  color: #a63c3c;
+  background: #fff4f2;
+  border: 1px solid #f0d5d1;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evaluation-muted {
+  margin: 10px 0 0;
+  color: #8a95a5;
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  .evaluation-filters {
+    grid-template-columns: minmax(220px, 1fr) 1fr 1fr;
+  }
+
+  .evaluation-filters .evaluation-primary {
+    grid-column: 1 / -1;
+    justify-self: end;
+    min-width: 100px;
+  }
+
+  .evaluation-create-layout {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .evaluation-create-form {
+    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) 112px;
+  }
+}
+
+@media (max-width: 620px) {
+  .evaluation-page {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .evaluation-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .evaluation-intro h1 {
+    font-size: 28px;
+  }
+
+  .evaluation-intro > div > p:last-child {
+    font-size: 12px;
+  }
+
+  .evaluation-count {
+    padding-bottom: 0;
+    font-size: 15px;
+  }
+
+  .evaluation-count strong {
+    font-size: 29px;
+  }
+
+  .evaluation-panel {
+    padding: 12px 10px 10px;
+  }
+
+  .evaluation-filters,
+  .evaluation-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-filters .evaluation-primary {
+    width: 100%;
+    grid-column: auto;
+  }
+
+  .evaluation-create-form label {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 5px;
+    white-space: normal;
+  }
+
+  .evaluation-create-form .evaluation-primary {
+    width: 100%;
+  }
+
+  .evaluation-progress {
+    grid-template-columns: 1fr auto;
+  }
+
+  .evaluation-progress-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .evaluation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px 0;
+  }
+
+  .evaluation-metrics div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .evaluation-results {
+    margin-top: 15px;
+  }
+}
 </style>
