@@ -235,6 +235,29 @@ input {
   cursor: pointer;
 }
 
+.recent-add.el-button.is-text:not(.is-disabled):hover,
+.recent-add.el-button.is-text:not(.is-disabled):focus,
+.recent-add.el-button.is-text:not(.is-disabled):active {
+  color: #1c644c !important;
+  background-color: #eef5f0 !important;
+  border-color: #1c644c !important;
+  box-shadow: 0 3px 8px rgb(28 100 76 / 16%) !important;
+}
+
+.recent-add.el-button.is-text.is-disabled,
+.recent-add.el-button.is-text.is-disabled:hover {
+  color: #8ca79b !important;
+  background-color: transparent !important;
+  border-color: #9db8ac !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+.recent-add.el-button.is-text:not(.is-disabled):focus-visible {
+  outline: 2px solid rgb(38 112 93 / 35%);
+  outline-offset: 2px;
+}
+
 .recent-add svg {
   width: 13px;
   height: 13px;
@@ -324,6 +347,52 @@ input {
   font-size: 13px;
   font-weight: 650;
   cursor: pointer;
+}
+
+.topbar-new-chat.el-button.is-text:not(.is-disabled):hover,
+.topbar-new-chat.el-button.is-text:not(.is-disabled):focus,
+.topbar-new-chat.el-button.is-text:not(.is-disabled):active {
+  color: #174f3d !important;
+  background-color: #eef5f0 !important;
+  border-color: transparent !important;
+  box-shadow: 0 3px 8px rgb(28 100 76 / 16%) !important;
+}
+
+.topbar-new-chat.el-button.is-text.is-disabled,
+.topbar-new-chat.el-button.is-text.is-disabled:hover {
+  color: #8ca79b !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+.topbar-new-chat.el-button.is-text:not(.is-disabled):focus-visible {
+  outline: 2px solid rgb(38 112 93 / 35%);
+  outline-offset: 3px;
+}
+
+.new-session-button.el-button--primary:not(.is-disabled):hover,
+.new-session-button.el-button--primary:not(.is-disabled):focus,
+.new-session-button.el-button--primary:not(.is-disabled):active {
+  color: #174f3d !important;
+  background-color: #eef5f0 !important;
+  border-color: transparent !important;
+  box-shadow: 0 3px 8px rgb(28 100 76 / 16%) !important;
+}
+
+.new-session-button.el-button--primary.is-disabled,
+.new-session-button.el-button--primary.is-disabled:hover {
+  color: #8ca79b !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+.new-session-button.el-button--primary:not(.is-disabled):focus-visible {
+  outline: 2px solid rgb(38 112 93 / 35%);
+  outline-offset: 3px;
 }
 
 .topbar-new-chat svg,
@@ -1813,6 +1882,11 @@ input {
   border: 1px solid #e0e8e3;
   border-radius: 10px;
   font-size: 14px;
+}
+
+.suggested-questions .suggestion-button {
+  width: 100%;
+  margin: 0;
 }
 
 .suggestion-button:hover {

@@ -86,7 +86,7 @@ class EvaluationService:
             "embedding_provider": self.config.embedding_provider,
             "embedding_model": self.config.embedding_model,
             "embedding_normalize": self.config.embedding_normalize,
-            "prompt_version": "labor_v1",
+            "prompt_version": "labor_langchain_v1",
             "chunk_size": self.config.chunk_size,
             "chunk_overlap": self.config.chunk_overlap,
             "top_k": self.config.rag_top_k,
