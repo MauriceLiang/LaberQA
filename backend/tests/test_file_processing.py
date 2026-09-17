@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from app.core.config import settings
 from app.core.error_codes import ErrorCode
 from app.services.document_parser import ParserFactory, find_doc_converter
 from app.services.file_storage import (
@@ -237,6 +238,7 @@ class ParserFactoryTests(unittest.TestCase):
 
         with (
             patch.dict(sys.modules, modules),
+            patch.object(settings, "doc_parser_backend", "libreoffice"),
             patch(
                 "app.services.document_parser.shutil.which",
                 return_value="/usr/bin/soffice",
@@ -248,6 +250,55 @@ class ParserFactoryTests(unittest.TestCase):
         self.assertEqual(parsed, "before\ntable A\ttable B\nafter")
         self.assertEqual(len(conversion_directories), 1)
         self.assertFalse(conversion_directories[0].exists())
+
+    def test_doc_conversion_uses_msdoc2docx_by_default_and_cleans_output(self) -> None:
+        source = self.root / "law.doc"
+        source.write_bytes(b"doc")
+        modules = self._fake_docx_modules()
+        output_directories: list[Path] = []
+
+        def convert(_source: str | Path, destination: str | Path) -> types.SimpleNamespace:
+            destination_path = Path(destination)
+            output_directories.append(destination_path.parent)
+            destination_path.write_bytes(b"converted")
+            return types.SimpleNamespace(
+                report=types.SimpleNamespace(diagnostics=[]),
+            )
+
+        doc2docx = types.ModuleType("doc2docx")
+        doc2docx.convert = convert  # type: ignore[attr-defined]
+        with (
+            patch.dict(
+                sys.modules,
+                {**modules, "doc2docx": doc2docx},
+            ),
+            patch.object(settings, "doc_parser_backend", "package"),
+        ):
+            parsed = ParserFactory.parse(source, "doc")
+
+        self.assertEqual(parsed, "before\ntable A\ttable B\nafter")
+        self.assertEqual(len(output_directories), 1)
+        self.assertFalse(output_directories[0].exists())
+
+    def test_doc_conversion_rejects_error_diagnostics_from_msdoc2docx(self) -> None:
+        source = self.root / "law.doc"
+        source.write_bytes(b"doc")
+
+        def convert(_source: str | Path, destination: str | Path) -> types.SimpleNamespace:
+            Path(destination).write_bytes(b"converted")
+            diagnostic = types.SimpleNamespace(severity="error")
+            return types.SimpleNamespace(
+                report=types.SimpleNamespace(diagnostics=[diagnostic]),
+            )
+
+        doc2docx = types.ModuleType("doc2docx")
+        doc2docx.convert = convert  # type: ignore[attr-defined]
+        with (
+            patch.dict(sys.modules, {"doc2docx": doc2docx}),
+            patch.object(settings, "doc_parser_backend", "package"),
+            self.assertRaisesRegex(DocumentParseError, "转换报告包含错误"),
+        ):
+            ParserFactory.parse(source, "doc")
 
     def test_doc_converter_handles_a_real_legacy_file_when_installed(self) -> None:
         from docx import Document
@@ -287,10 +338,15 @@ class ParserFactoryTests(unittest.TestCase):
             "第一条 工资应当按时支付。", ParserFactory.parse(legacy_source, "doc")
         )
 
-    def test_missing_doc_converter_has_a_distinct_exception(self) -> None:
+    def test_missing_doc_parser_and_converter_have_a_distinct_exception(self) -> None:
         source = self.root / "law.doc"
         source.write_bytes(b"doc")
         with (
+            patch.object(settings, "doc_parser_backend", "package"),
+            patch(
+                "app.services.document_parser.package_doc_parser_available",
+                return_value=False,
+            ),
             patch("app.services.document_parser.shutil.which", return_value=None),
             self.assertRaises(DocumentConverterUnavailable),
         ):

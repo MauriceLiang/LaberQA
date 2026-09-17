@@ -260,6 +260,7 @@ input {
 
 .recent-conversation + .recent-conversation {
   margin-top: 5px;
+  margin-left: 0;
 }
 
 .recent-conversation:hover,

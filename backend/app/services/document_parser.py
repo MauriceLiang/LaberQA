@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.services.file_storage import (
     DocumentConverterUnavailable,
     DocumentParseError,
@@ -26,11 +26,37 @@ def find_doc_converter(preferred: str | None = None) -> str | None:
     )
 
 
+def package_doc_parser_available() -> bool:
+    """Return whether the bundled pure-Python legacy DOC parser is importable."""
+    try:
+        from doc2docx import convert
+    except ImportError:
+        return False
+    return callable(convert)
+
+
+def is_doc_parser_available(config: Settings | None = None) -> bool:
+    """Return whether the configured DOC parser or its fallback is available."""
+    parser_backend = getattr(config or settings, "doc_parser_backend", "package")
+    if parser_backend == "package" and package_doc_parser_available():
+        return True
+    return (
+        find_doc_converter(getattr(config or settings, "doc_converter", None))
+        is not None
+    )
+
+
 class ParserFactory:
     """Parse PDF, DOCX, TXT, and legacy DOC documents into plain text."""
 
     @classmethod
-    def parse(cls, path: str | Path, file_type: str) -> str:
+    def parse(
+        cls,
+        path: str | Path,
+        file_type: str,
+        *,
+        config: Settings | None = None,
+    ) -> str:
         source_path = Path(path)
         normalized_type = str(getattr(file_type, "value", file_type))
         normalized_type = normalized_type.lower().lstrip(".")
@@ -53,7 +79,7 @@ class ParserFactory:
             return cls._parse_docx(source_path)
         if normalized_type == "txt":
             return cls._parse_txt(source_path)
-        return cls._parse_doc(source_path)
+        return cls._parse_doc(source_path, config=config)
 
     @staticmethod
     def _parse_txt(path: Path) -> str:
@@ -107,10 +133,61 @@ class ParserFactory:
         return text
 
     @classmethod
-    def _parse_doc(cls, path: Path) -> str:
-        converter = find_doc_converter()
+    def _parse_doc(
+        cls,
+        path: Path,
+        *,
+        config: Settings | None = None,
+    ) -> str:
+        parser_config = config or settings
+        if (
+            parser_config.doc_parser_backend == "package"
+            and package_doc_parser_available()
+        ):
+            return cls._parse_doc_with_package(path)
+        return cls._parse_doc_with_libreoffice(path, parser_config.doc_converter)
+
+    @classmethod
+    def _parse_doc_with_package(cls, path: Path) -> str:
+        try:
+            from doc2docx import convert
+        except Exception as exc:
+            raise DocumentConverterUnavailable("msdoc2docx 未安装或不可用") from exc
+
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="laberqa-doc-convert-"
+            ) as directory:
+                converted_path = Path(directory) / "converted.docx"
+                result = convert(path, converted_path)
+                if cls._conversion_report_has_errors(result):
+                    raise DocumentParseError("DOC 转换报告包含错误")
+                if not converted_path.is_file():
+                    raise DocumentParseError("DOC 转换器未生成 DOCX 文件")
+                return cls._parse_docx(converted_path)
+        except DocumentParseError:
+            raise
+        except Exception as exc:
+            raise DocumentParseError("DOC 转换失败") from exc
+
+    @staticmethod
+    def _conversion_report_has_errors(result: object) -> bool:
+        report = getattr(result, "report", None)
+        diagnostics = getattr(report, "diagnostics", ())
+        for diagnostic in diagnostics:
+            severity = getattr(diagnostic, "severity", diagnostic)
+            severity_value = getattr(severity, "value", severity)
+            if str(severity_value).lower() == "error":
+                return True
+        return False
+
+    @classmethod
+    def _parse_doc_with_libreoffice(
+        cls, path: Path, preferred: str | None = None
+    ) -> str:
+        converter = find_doc_converter(preferred)
         if converter is None:
-            raise DocumentConverterUnavailable("LibreOffice 未安装或不可用")
+            raise DocumentConverterUnavailable("DOC 解析器未安装或不可用")
 
         try:
             with tempfile.TemporaryDirectory(

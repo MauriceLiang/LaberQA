@@ -10,7 +10,7 @@ from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.repositories.document_repository import DocumentRepository
-from app.services.document_parser import ParserFactory, find_doc_converter
+from app.services.document_parser import ParserFactory, is_doc_parser_available
 from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 from app.services.file_storage import (
     DocumentConverterUnavailable,
@@ -63,13 +63,11 @@ class DocumentService:
         except UploadValidationError as exc:
             raise AppError(exc.code, str(exc), exc.http_status) from exc
 
-        if stored_file.file_type == "doc" and not find_doc_converter(
-            self.config.doc_converter
-        ):
+        if stored_file.file_type == "doc" and not is_doc_parser_available(self.config):
             self.file_storage.delete(stored_file.path)
             raise AppError(
                 ErrorCode.DOC_CONVERTER_UNAVAILABLE,
-                "DOC 转换器未安装或不可用",
+                "DOC 解析器未安装或不可用",
                 http_status=503,
             )
 
@@ -135,9 +133,16 @@ class DocumentService:
             inserted_rows: list[dict] = []
             added_vector_ids: list[int] = []
             try:
-                source_text = self.parser.parse(
-                    document["file_path"], document["file_type"]
-                )
+                if self.parser is ParserFactory:
+                    source_text = self.parser.parse(
+                        document["file_path"],
+                        document["file_type"],
+                        config=self.config,
+                    )
+                else:
+                    source_text = self.parser.parse(
+                        document["file_path"], document["file_type"]
+                    )
                 cleaned_text = TextCleaner.clean(source_text)
                 chunks = self.chunker.chunk(cleaned_text)
                 if not chunks:
@@ -269,7 +274,7 @@ class DocumentService:
     @staticmethod
     def _error_message(exc: Exception) -> str:
         if isinstance(exc, DocumentConverterUnavailable):
-            return "DOC 转换器未安装或不可用"
+            return "DOC 解析器未安装或不可用"
         if isinstance(exc, DocumentParseError | EmptyFileError):
             return str(exc)
         if isinstance(exc, EmbeddingUnavailableError):
