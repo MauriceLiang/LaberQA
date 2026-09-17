@@ -73,7 +73,7 @@ class EmptyFileError(UploadValidationError):
 
 
 class DocumentConverterUnavailable(FileProcessingError):
-    """LibreOffice is not available for legacy DOC conversion."""
+    """No legacy DOC parser or conversion fallback is available."""
 
 
 class DocumentParseError(FileProcessingError):

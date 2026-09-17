@@ -151,7 +151,8 @@ class DocumentApiTests(unittest.TestCase):
     def test_doc_upload_requires_configured_converter_before_acceptance(self) -> None:
         with (
             patch(
-                "app.services.document_service.find_doc_converter", return_value=None
+                "app.services.document_service.is_doc_parser_available",
+                return_value=False,
             ),
             TestClient(app) as client,
         ):

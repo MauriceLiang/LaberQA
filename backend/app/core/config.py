@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("./uploads")
     faiss_dir: Path = Path("./data/faiss")
     max_upload_size_mb: int = Field(default=20, ge=1)
+    doc_parser_backend: Literal["package", "libreoffice"] = "package"
     doc_converter: str = "libreoffice"
     chunk_size: int = Field(default=600, ge=100, le=2000)
     chunk_overlap: int = Field(default=100, ge=0, le=500)
