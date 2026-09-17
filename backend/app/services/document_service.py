@@ -85,29 +85,45 @@ class DocumentService:
             raise
 
     def reimport(self, document_id: int) -> dict:
-        document = self.repository.get_document(document_id)
-        if document is None:
-            raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
-        if document["status"] != "FAILED":
-            raise AppError(
-                ErrorCode.INVALID_DOCUMENT_STATE,
-                "只有导入失败的文档可以重新导入",
-                http_status=409,
+        with self._import_lock:
+            document = self.repository.get_document(document_id)
+            if document is None:
+                raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+            if document["status"] != "FAILED":
+                raise AppError(
+                    ErrorCode.INVALID_DOCUMENT_STATE,
+                    "只有导入失败的文档可以重新导入",
+                    http_status=409,
+                )
+
+            stale_ids = self.repository.delete_chunks(document_id)
+            self._remove_vectors(stale_ids, "stale vectors before reimport")
+            return self.repository.update_document(
+                document_id,
+                status="PROCESSING",
+                error_message=None,
+                chunk_count=0,
             )
 
-        stale_ids = self.repository.delete_chunks(document_id)
-        if stale_ids and self.vector_store.is_signature_compatible():
+    def delete_document(self, document_id: int) -> dict:
+        """Delete a document and every persisted resource derived from it."""
+        with self._import_lock:
+            deleted = self.repository.delete_document(document_id)
+            if deleted is None:
+                raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+
+            document = deleted["document"]
+            self._remove_vectors(deleted["chunk_ids"], "vectors after document deletion")
             try:
-                self.vector_store.remove(stale_ids)
+                self.file_storage.delete(document["file_path"])
             except Exception:
-                logger.exception("Could not remove stale vectors before reimport")
-                self._rebuild_index()
-        return self.repository.update_document(
-            document_id,
-            status="PROCESSING",
-            error_message=None,
-            chunk_count=0,
-        )
+                # The database is the source of truth. Keep the delete request
+                # successful while making an orphaned file visible in logs.
+                logger.exception(
+                    "Could not remove source file for deleted document %s",
+                    document_id,
+                )
+            return document
 
     def import_document(self, document_id: int) -> None:
         """Process a document in the FastAPI background-task worker."""
@@ -216,12 +232,19 @@ class DocumentService:
             deleted_ids = [row["id"] for row in inserted_rows]
 
         ids_to_remove = list(dict.fromkeys(added_vector_ids + deleted_ids))
-        if ids_to_remove and self.vector_store.is_signature_compatible():
-            try:
-                self.vector_store.remove(ids_to_remove)
-            except Exception:
-                logger.exception("Could not remove vectors after import failure")
-                self._rebuild_index()
+        self._remove_vectors(ids_to_remove, "vectors after import failure")
+
+    def _remove_vectors(self, chunk_ids: list[int], context: str) -> None:
+        if not chunk_ids:
+            return
+        try:
+            if not self.vector_store.is_signature_compatible():
+                self.vector_store.load()
+            if self.vector_store.is_signature_compatible():
+                self.vector_store.remove(chunk_ids)
+        except Exception:
+            logger.exception("Could not remove %s", context)
+            self._rebuild_index()
 
     def _rebuild_index(self) -> None:
         try:

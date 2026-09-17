@@ -75,10 +75,10 @@ async function submitUpload() {
         :disabled="uploading"
         @change="onFileChange"
       />
-      <button class="file-picker-button" type="button" :disabled="uploading" @click="chooseFile">
+      <ElButton class="file-picker-button" :disabled="uploading" @click="chooseFile">
         <FolderOpened aria-hidden="true" />
         <span>选择文件</span>
-      </button>
+      </ElButton>
       <ElButton class="upload-submit-button" type="primary" :disabled="!selectedFile" :loading="uploading" @click="submitUpload">
         <Document aria-hidden="true" />
         上传资料

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElButton, ElInput, ElOption, ElPagination, ElSelect } from 'element-plus'
-import { ArrowRight, Filter, Search } from '@element-plus/icons-vue'
+import { ArrowRight, Delete, Filter, Search } from '@element-plus/icons-vue'
 
 import type { DocumentItem } from '@/api/documents'
 
@@ -12,6 +12,7 @@ const props = defineProps<{
   size: number
   total: number
   selectedId?: number
+  deletingId?: number
   keyword: string
   status: DocumentItem['status'] | ''
 }>()
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   size: [size: number]
   select: [document: DocumentItem]
   reimport: [document: DocumentItem]
+  delete: [document: DocumentItem]
 }>()
 
 const draftKeyword = ref(props.keyword)
@@ -59,6 +61,10 @@ function selectRow(row: unknown) {
 
 function requestReimport(document: unknown) {
   emit('reimport', document as DocumentItem)
+}
+
+function requestDelete(document: unknown) {
+  emit('delete', document as DocumentItem)
 }
 
 function selectWithKeyboard(event: KeyboardEvent, document: DocumentItem) {
@@ -141,16 +147,26 @@ function selectWithKeyboard(event: KeyboardEvent, document: DocumentItem) {
               <span v-else class="muted-copy">—</span>
             </td>
             <td>
-              <button
-                v-if="document.status === 'FAILED'"
-                class="document-reimport-button"
-                type="button"
-                @click.stop="requestReimport(document)"
-              >
-                重新导入
-                <ArrowRight aria-hidden="true" />
-              </button>
-              <span v-else class="muted-copy">—</span>
+              <div class="document-operation-actions">
+                <ElButton
+                  v-if="document.status === 'FAILED'"
+                  class="document-reimport-button"
+                  :disabled="deletingId === document.id"
+                  @click.stop="requestReimport(document)"
+                >
+                  重新导入
+                  <ArrowRight aria-hidden="true" />
+                </ElButton>
+                <ElButton
+                  class="document-delete-button"
+                  :disabled="deletingId === document.id"
+                  :aria-busy="deletingId === document.id"
+                  @click.stop="requestDelete(document)"
+                >
+                  <Delete aria-hidden="true" />
+                  {{ deletingId === document.id ? '删除中…' : '删除' }}
+                </ElButton>
+              </div>
             </td>
           </tr>
           <tr v-if="!loading && documents.length === 0" class="document-empty-row">

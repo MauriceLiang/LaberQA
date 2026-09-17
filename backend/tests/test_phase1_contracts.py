@@ -18,6 +18,7 @@ EXPECTED_OPERATIONS = {
     ("post", "/api/documents/upload"),
     ("get", "/api/documents"),
     ("get", "/api/documents/{id}"),
+    ("delete", "/api/documents/{id}"),
     ("post", "/api/documents/{id}/reimport"),
     ("get", "/api/documents/{id}/chunks"),
     ("post", "/api/sessions"),

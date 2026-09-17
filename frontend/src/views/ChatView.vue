@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { ElButton } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 
 import MessageList from '@/components/chat/MessageList.vue'
@@ -276,16 +277,15 @@ function useSuggestion(value: string) {
       <div ref="conversation" class="chat-conversation">
         <MessageList :messages="messages" :history-loading="historyLoading">
           <template #suggestions>
-            <button
+            <ElButton
               v-for="suggestion in suggestions"
               :key="suggestion"
-              type="button"
               class="suggestion-button"
               @click="useSuggestion(suggestion)"
             >
               {{ suggestion }}
               <ArrowRight aria-hidden="true" />
-            </button>
+            </ElButton>
           </template>
         </MessageList>
       </div>

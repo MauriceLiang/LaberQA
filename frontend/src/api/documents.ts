@@ -41,6 +41,10 @@ export async function reimportDocument(id: number): Promise<void> {
   await http.post(`/documents/${id}/reimport`)
 }
 
+export async function deleteDocument(id: number): Promise<void> {
+  await http.delete(`/documents/${id}`)
+}
+
 export async function getDocumentChunks(
   id: number,
   page: number,

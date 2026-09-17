@@ -42,6 +42,40 @@ class DocumentRepository:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    def delete_document(self, document_id: int) -> dict[str, Any] | None:
+        """Delete a document and all database rows derived from its chunks."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM document WHERE id = ?", (document_id,)
+            ).fetchone()
+            if row is None:
+                return None
+
+            chunk_ids = [
+                int(chunk_row[0])
+                for chunk_row in connection.execute(
+                    "SELECT id FROM chunk WHERE document_id = ? ORDER BY id",
+                    (document_id,),
+                ).fetchall()
+            ]
+            # citation.chunk_id intentionally has no ON DELETE CASCADE because
+            # citations normally need an existing source chunk. Remove those
+            # references explicitly before deleting the chunks.
+            connection.execute(
+                """
+                DELETE FROM citation
+                WHERE chunk_id IN (
+                    SELECT id FROM chunk WHERE document_id = ?
+                )
+                """,
+                (document_id,),
+            )
+            connection.execute(
+                "DELETE FROM chunk WHERE document_id = ?", (document_id,)
+            )
+            connection.execute("DELETE FROM document WHERE id = ?", (document_id,))
+            return {"document": dict(row), "chunk_ids": chunk_ids}
+
     def list_documents(
         self,
         *,

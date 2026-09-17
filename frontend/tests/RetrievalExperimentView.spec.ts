@@ -1,4 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
+import { ElInput } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as experimentsApi from '@/api/experiments'
@@ -112,7 +113,7 @@ describe('RetrievalExperimentView', () => {
     expect(experimentsApi.createExperiment).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请填写实验名称')
 
-    await wrapper.get('input[placeholder="例如：检索参数对比-20260915"]').setValue('劳动权益检索实验')
+    await wrapper.findComponent(ElInput).vm.$emit('update:modelValue', '劳动权益检索实验')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 

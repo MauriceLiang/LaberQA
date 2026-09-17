@@ -1,5 +1,6 @@
 import { nextTick } from 'vue'
 import { flushPromises, shallowMount } from '@vue/test-utils'
+import { ElMessageBox } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChunkPage, DocumentItem, DocumentPage } from '@/api/documents'
@@ -12,6 +13,7 @@ import DocumentList from '@/components/documents/DocumentList.vue'
 import DocumentUpload from '@/components/documents/DocumentUpload.vue'
 
 vi.mock('@/api/documents', () => ({
+  deleteDocument: vi.fn(),
   getDocument: vi.fn(),
   getDocumentChunks: vi.fn(),
   getDocuments: vi.fn(),
@@ -83,6 +85,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('DocumentsView', () => {
@@ -241,6 +244,34 @@ describe('DocumentsView', () => {
     expect(vi.getTimerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(4000)
     expect(documentsApi.getDocument).not.toHaveBeenCalled()
+  })
+
+  it('requires confirmation before deleting a document and refreshes after success', async () => {
+    vi.mocked(documentsApi.getDocuments)
+      .mockResolvedValueOnce(page([successDocument]))
+      .mockResolvedValueOnce(page([]))
+    vi.mocked(documentsApi.deleteDocument).mockResolvedValueOnce()
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce(new Error('cancel'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    wrapper.getComponent(DocumentList).vm.$emit('delete', successDocument)
+    await nextTick()
+    expect(confirm).toHaveBeenCalledWith(
+      '将同时删除该资料的文本分块、向量索引和上传文件，删除后不可恢复。',
+      `确定删除“${successDocument.file_name}”吗？`,
+      expect.objectContaining({ confirmButtonText: '删除', cancelButtonText: '取消' }),
+    )
+    expect(documentsApi.deleteDocument).not.toHaveBeenCalled()
+
+    confirm.mockResolvedValueOnce(undefined as never)
+    wrapper.getComponent(DocumentList).vm.$emit('delete', successDocument)
+    await flushPromises()
+
+    expect(documentsApi.deleteDocument).toHaveBeenCalledWith(successDocument.id)
+    expect(wrapper.getComponent(DocumentList).props('documents')).toEqual([])
+    expect(wrapper.getComponent(DocumentList).props('selectedId')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('does not restart polling when an in-flight status request finishes after unmount', async () => {

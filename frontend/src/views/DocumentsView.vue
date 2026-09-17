@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ElAlert, ElButton } from 'element-plus'
+import { ElAlert, ElButton, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 import ChunkDetail from '@/components/documents/ChunkDetail.vue'
@@ -8,6 +8,7 @@ import ChunkList from '@/components/documents/ChunkList.vue'
 import DocumentList from '@/components/documents/DocumentList.vue'
 import DocumentUpload from '@/components/documents/DocumentUpload.vue'
 import {
+  deleteDocument,
   getDocument,
   getDocumentChunks,
   getDocuments,
@@ -16,7 +17,7 @@ import {
   type DocumentItem,
   type DocumentUploadAccepted,
 } from '@/api/documents'
-import { getErrorMessage } from '@/api/http'
+import { ApiError, getErrorMessage } from '@/api/http'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -30,6 +31,7 @@ const selectedDocumentId = ref<number>()
 const pageLoading = ref(false)
 const pageError = ref('')
 const actionError = ref('')
+const deletingDocumentId = ref<number>()
 
 const chunks = ref<ChunkItem[]>([])
 const totalChunks = ref(0)
@@ -174,9 +176,22 @@ async function pollProcessingDocuments() {
   pageError.value = ''
   let reachedTerminalStatus = false
   try {
-    const results = await Promise.all([...trackedProcessingIds].map((id) => getDocument(id)))
+    const results = await Promise.all(
+      [...trackedProcessingIds].map(async (id) => {
+        try {
+          return await getDocument(id)
+        } catch (error) {
+          if (error instanceof ApiError && error.code === 40401) {
+            trackedProcessingIds.delete(id)
+            return undefined
+          }
+          throw error
+        }
+      }),
+    )
     if (!isMounted) return
     for (const updated of results) {
+      if (!updated) continue
       const index = documents.value.findIndex((document) => document.id === updated.id)
       if (updated.status === 'PROCESSING') trackedProcessingIds.add(updated.id)
       else {
@@ -281,6 +296,47 @@ async function onReimport(document: DocumentItem) {
   }
 }
 
+async function onDelete(document: DocumentItem) {
+  if (deletingDocumentId.value !== undefined) return
+  try {
+    await ElMessageBox.confirm(
+      `将同时删除该资料的文本分块、向量索引和上传文件，删除后不可恢复。`,
+      `确定删除“${document.file_name}”吗？`,
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        closeOnClickModal: false,
+      },
+    )
+  } catch {
+    return
+  }
+
+  deletingDocumentId.value = document.id
+  actionError.value = ''
+  trackedProcessingIds.delete(document.id)
+  syncPolling()
+  try {
+    await deleteDocument(document.id)
+    if (selectedDocumentId.value === document.id) clearSelection()
+    await loadDocuments()
+  } catch (error) {
+    if (document.status === 'PROCESSING') {
+      trackedProcessingIds.add(document.id)
+      syncPolling()
+    }
+    actionError.value = `删除资料失败：${getErrorMessage(error)}`
+  } finally {
+    deletingDocumentId.value = undefined
+  }
+
+  if (documents.value.length === 0 && documentPage.value > 1) {
+    documentPage.value -= 1
+    await loadDocuments()
+  }
+}
+
 async function onFilter(query: { keyword: string; status: DocumentItem['status'] | '' }) {
   keyword.value = query.keyword
   status.value = query.status
@@ -355,6 +411,7 @@ onUnmounted(() => {
       :size="documentPageSize"
       :total="totalDocuments"
       :selected-id="selectedDocumentId"
+      :deleting-id="deletingDocumentId"
       :keyword="keyword"
       :status="status"
       @filter="onFilter"
@@ -362,6 +419,7 @@ onUnmounted(() => {
       @size="onDocumentSize"
       @select="selectDocument"
       @reimport="onReimport"
+      @delete="onDelete"
     />
 
     <section v-if="selectedDocument" class="selected-document-panel">
