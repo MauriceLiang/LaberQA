@@ -23,11 +23,24 @@ input {
   font: inherit;
 }
 
-.el-select-dropdown {
-  overflow: hidden;
-  border: 1px solid #d8e1dc;
+.el-select .el-select__wrapper {
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+.el-select__popper.el-popper {
+  --el-popper-border-radius: 8px;
+
+  border-color: #d8e1dc;
   border-radius: 8px;
   box-shadow: 0 10px 26px rgb(31 68 54 / 12%);
+}
+
+.el-select__popper.el-popper .el-select-dropdown {
+  overflow: hidden;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: none;
 }
 
 .el-select-dropdown__item {

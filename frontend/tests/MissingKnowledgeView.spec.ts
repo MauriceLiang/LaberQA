@@ -39,38 +39,56 @@ beforeEach(() => {
 })
 
 describe('MissingKnowledgeView', () => {
-  it('loads pending topics sorted by frequency and displays the topic', async () => {
+  it('loads all topics sorted by frequency and displays the topic', async () => {
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
 
     expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenCalledWith({
       page: 1,
       size: 20,
-      status: 'PENDING',
+      status: undefined,
       keyword: undefined,
       sort: 'count_desc',
     })
     expect(wrapper.text()).toContain('公司拖欠工资怎么办')
     expect(wrapper.text()).toContain('工资支付与欠薪')
-    expect(wrapper.findAllComponents(ElSelect)[0].props('modelValue')).toBe('PENDING')
+    expect(wrapper.findAllComponents(ElSelect)[0].props('modelValue')).toBe('')
     wrapper.unmount()
   })
 
-  it('applies the status, keyword, and sort filters', async () => {
+  it('applies the status and keyword filters', async () => {
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
     const selects = wrapper.findAllComponents(ElSelect)
     await wrapper.findAllComponents(ElInput)[0].vm.$emit('update:modelValue', '工资')
-    await selects[0].vm.$emit('update:modelValue', '')
-    await selects[1].vm.$emit('update:modelValue', 'last_seen_desc')
+    await selects[0].vm.$emit('update:modelValue', 'RESOLVED')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
     expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenLastCalledWith({
       page: 1,
       size: 20,
-      status: undefined,
+      status: 'RESOLVED',
       keyword: '工资',
+      sort: 'count_desc',
+    })
+    wrapper.unmount()
+  })
+
+  it('applies a new sort order immediately', async () => {
+    const wrapper = shallowMount(MissingKnowledgeView)
+    await flushPromises()
+    const sortSelect = wrapper.findAllComponents(ElSelect)[1]
+
+    await sortSelect.vm.$emit('update:modelValue', 'last_seen_desc')
+    await sortSelect.vm.$emit('change', 'last_seen_desc')
+    await flushPromises()
+
+    expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenLastCalledWith({
+      page: 1,
+      size: 20,
+      status: undefined,
+      keyword: undefined,
       sort: 'last_seen_desc',
     })
     wrapper.unmount()
@@ -104,7 +122,7 @@ describe('MissingKnowledgeView', () => {
     expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenLastCalledWith({
       page: 2,
       size: 20,
-      status: 'PENDING',
+      status: undefined,
       keyword: undefined,
       sort: 'count_desc',
     })
@@ -112,9 +130,6 @@ describe('MissingKnowledgeView', () => {
   })
 
   it('saves status and note changes', async () => {
-    vi.mocked(missingKnowledgeApi.getMissingKnowledge)
-      .mockResolvedValueOnce(page([item]))
-      .mockResolvedValueOnce(page([]))
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
     await wrapper.findAllComponents(ElSelect)[2].vm.$emit('update:modelValue', 'RESOLVED')
@@ -126,8 +141,9 @@ describe('MissingKnowledgeView', () => {
       status: 'RESOLVED',
       note: '已补充工资支付材料',
     })
-    expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('暂无符合条件的知识缺口')
+    expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('公司拖欠工资怎么办')
+    expect(wrapper.findAllComponents(ElSelect)[2].props('modelValue')).toBe('RESOLVED')
     wrapper.unmount()
   })
 

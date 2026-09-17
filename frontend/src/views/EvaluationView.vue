@@ -16,6 +16,7 @@ import {
   type EvaluationRunSummary,
 } from '@/api/evaluations'
 import { getErrorMessage } from '@/api/http'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 
 const cases = ref<EvaluationCase[]>([])
 const casePage = ref(1)
@@ -60,6 +61,12 @@ const displayedRunName = computed(
 const displayedStatus = computed(
   () => runDetail.value?.status ?? selectedRunSummary.value?.status,
 )
+const hasUnavailableMetrics = computed(() => {
+  const metrics = runDetail.value?.metrics
+  return metrics !== null
+    && metrics !== undefined
+    && Object.values(metrics).some((value) => value === null)
+})
 const terminalStatus = (status: EvaluationJobStatus | undefined) =>
   status === 'COMPLETED' || status === 'FAILED'
 
@@ -226,11 +233,11 @@ function formatStatus(status: EvaluationJobStatus | undefined) {
 }
 
 function formatRate(value: number | null | undefined) {
-  return value === null || value === undefined ? '—' : `${(value * 100).toFixed(1)}%`
+  return value === null || value === undefined ? '不适用' : `${(value * 100).toFixed(1)}%`
 }
 
 function formatFlag(value: boolean | null) {
-  return value === null ? '—' : value ? '是' : '否'
+  return value === null ? '不适用' : value ? '是' : '否'
 }
 
 function formatCaseId(id: number) {
@@ -380,7 +387,7 @@ onBeforeUnmount(() => {
         <div class="evaluation-section-heading">
           <div>
             <h2 id="evaluation-create-title">创建评测批次</h2>
-            <p>选择用例后仅运行所选项</p>
+            <p>不选用例将运行全部 60 条；仅运行部分用例时，缺少对应类型的指标不适用</p>
           </div>
         </div>
         <form class="evaluation-create-form" @submit.prevent="createRun">
@@ -500,6 +507,9 @@ onBeforeUnmount(() => {
           <div><span>多轮通过率</span><strong>{{ formatRate(runDetail.metrics.multi_turn_pass_rate) }}</strong></div>
           <div><span>合规提示命中率</span><strong>{{ formatRate(runDetail.metrics.compliance_hit_rate) }}</strong></div>
         </div>
+        <p v-if="hasUnavailableMetrics" class="evaluation-metric-note">
+          “不适用”表示本批次没有包含该指标所需的用例；运行全部 60 条可生成完整指标。
+        </p>
         <div v-else-if="terminalStatus(runDetail.status)" class="evaluation-muted">此批次没有可计算的指标。</div>
 
         <div class="evaluation-results">
@@ -516,7 +526,11 @@ onBeforeUnmount(() => {
               <span v-if="result.latency_ms !== null">· {{ result.latency_ms }} ms</span>
             </div>
             <p v-if="result.error_message" class="evaluation-error">{{ result.error_message }}</p>
-            <p v-if="result.answer" class="evaluation-answer">{{ result.answer }}</p>
+            <MarkdownContent
+              v-if="result.answer"
+              class="evaluation-answer"
+              :content="result.answer"
+            />
             <div class="evaluation-result-flags">
               <span>正确：<b>{{ formatFlag(result.correct) }}</b></span>
               <span>拒答：<b>{{ formatFlag(result.refused) }}</b></span>
@@ -1082,6 +1096,13 @@ onBeforeUnmount(() => {
   line-height: 1.1;
 }
 
+.evaluation-metric-note {
+  margin: 10px 0 0;
+  color: #7d899b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .evaluation-results {
   margin-top: 18px;
 }
@@ -1131,7 +1152,6 @@ onBeforeUnmount(() => {
   color: #4e5a6b;
   font-size: 12px;
   line-height: 1.65;
-  white-space: pre-wrap;
 }
 
 .evaluation-citations {

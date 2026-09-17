@@ -21,7 +21,7 @@ interface Draft {
 const items = ref<MissingKnowledgeItem[]>([])
 const drafts = ref<Record<number, Draft>>({})
 const keywordInput = ref('')
-const statusFilter = ref<MissingKnowledgeStatus | ''>('PENDING')
+const statusFilter = ref<MissingKnowledgeStatus | ''>('')
 const sortFilter = ref<MissingKnowledgeSort>('count_desc')
 const page = ref(1)
 const size = ref(20)
@@ -70,6 +70,12 @@ async function loadItems() {
 }
 
 function applyFilters() {
+  page.value = 1
+  void loadItems()
+}
+
+function changeSort(nextSort: MissingKnowledgeSort) {
+  sortFilter.value = nextSort
   page.value = 1
   void loadItems()
 }
@@ -161,10 +167,16 @@ onMounted(() => void loadItems())
           </ElSelect>
         </label>
         <label class="missing-filter-control">
-          <span class="sr-only">排序</span>
-          <ElSelect v-model="sortFilter" class="missing-filter-select" aria-label="按拒答次数排序">
-            <ElOption label="拒答次数" value="count_desc" />
-            <ElOption label="最近出现" value="last_seen_desc" />
+          <span class="sr-only">排序方式</span>
+          <ElSelect
+            v-model="sortFilter"
+            class="missing-filter-select"
+            aria-label="选择排序方式"
+            placeholder="排序方式"
+            @change="changeSort"
+          >
+            <ElOption label="拒答次数从高到低" value="count_desc" />
+            <ElOption label="最近出现从新到旧" value="last_seen_desc" />
           </ElSelect>
         </label>
         <ElButton type="primary" native-type="submit" class="missing-knowledge-primary missing-filter-submit">

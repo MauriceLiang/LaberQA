@@ -3,6 +3,7 @@ import { ElInput, ElSelect } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as evaluationsApi from '@/api/evaluations'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 import EvaluationView from '@/views/EvaluationView.vue'
 
 vi.mock('@/api/evaluations', () => ({
@@ -71,7 +72,7 @@ function runDetail(
     results: status === 'COMPLETED' ? [{
       case_id: 3,
       status: 'COMPLETED',
-      answer: '可以申请劳动仲裁。',
+      answer: '**简要结论：**\n\n可以申请劳动仲裁。\n\n- 准备工资记录\n- 保存沟通证据',
       refused: false,
       correct: true,
       source_hit: true,
@@ -181,10 +182,38 @@ describe('EvaluationView', () => {
     expect(wrapper.text()).toContain('多轮通过率')
     expect(wrapper.text()).toContain('用例 #3')
     expect(wrapper.text()).toContain('工资支付规定.txt')
+    const answer = wrapper.findComponent(MarkdownContent)
+    expect(answer.exists()).toBe(true)
+    expect(answer.props('content')).toContain('**简要结论：**')
     expect(vi.getTimerCount()).toBe(0)
 
     await vi.advanceTimersByTimeAsync(4000)
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('explains metrics that have no applicable cases instead of presenting them as failed calculations', async () => {
+    const detail = runDetail('COMPLETED')
+    detail.metrics = {
+      accuracy: 0.85,
+      reject_rate: null,
+      citation_hit_rate: 0.65,
+      multi_turn_pass_rate: null,
+      compliance_hit_rate: null,
+    }
+    vi.mocked(evaluationsApi.getEvaluationRuns).mockResolvedValue({
+      items: [runSummary('COMPLETED')], page: 1, size: 10, total: 1, pages: 1,
+    })
+    vi.mocked(evaluationsApi.getEvaluationRun).mockResolvedValue(detail)
+
+    const wrapper = shallowMount(EvaluationView)
+    await flushPromises()
+
+    expect(wrapper.get('.evaluation-metrics').text()).toContain('85.0%')
+    expect(wrapper.get('.evaluation-metrics').text()).toContain('65.0%')
+    expect(wrapper.get('.evaluation-metrics').text()).toContain('不适用')
+    expect(wrapper.get('.evaluation-metric-note').text()).toContain('没有包含该指标所需的用例')
+    expect(wrapper.text()).not.toContain('—')
     wrapper.unmount()
   })
 })
