@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
 import {
@@ -93,6 +94,12 @@ function applyCaseFilters() {
 
 function changeCasePage(nextPage: number) {
   casePage.value = nextPage
+  void loadCases()
+}
+
+function changeCaseSize(nextSize: number) {
+  caseSize.value = nextSize
+  casePage.value = 1
   void loadCases()
 }
 
@@ -286,26 +293,31 @@ onBeforeUnmount(() => {
       <form class="evaluation-filters" @submit.prevent="applyCaseFilters">
         <label class="evaluation-filter-control evaluation-filter-search">
           <span class="sr-only">搜索主题或问题</span>
-          <Search aria-hidden="true" />
-          <input v-model="topicInput" type="search" placeholder="搜索主题或问题关键词" />
+          <ElInput
+            v-model="topicInput"
+            class="evaluation-filter-input"
+            type="search"
+            placeholder="搜索主题或问题关键词"
+            aria-label="搜索主题或问题"
+          >
+            <template #prefix><Search aria-hidden="true" /></template>
+          </ElInput>
         </label>
         <label class="evaluation-filter-control">
           <span class="sr-only">预期类型</span>
-          <select v-model="expectedTypeFilter" aria-label="预期类型">
-            <option value="">预期类型</option>
-            <option value="ANSWER">应回答</option>
-            <option value="REJECT">应拒答</option>
-          </select>
+          <ElSelect v-model="expectedTypeFilter" class="evaluation-filter-select" aria-label="预期类型" placeholder="预期类型">
+            <ElOption label="应回答" value="ANSWER" />
+            <ElOption label="应拒答" value="REJECT" />
+          </ElSelect>
         </label>
         <label class="evaluation-filter-control">
           <span class="sr-only">对话轮数</span>
-          <select v-model="multiTurnFilter" aria-label="对话轮数">
-            <option value="">对话轮数</option>
-            <option value="false">单轮</option>
-            <option value="true">多轮</option>
-          </select>
+          <ElSelect v-model="multiTurnFilter" class="evaluation-filter-select" aria-label="对话轮数" placeholder="对话轮数">
+            <ElOption label="单轮" value="false" />
+            <ElOption label="多轮" value="true" />
+          </ElSelect>
         </label>
-        <button type="submit" class="evaluation-primary">筛选</button>
+        <ElButton type="primary" native-type="submit" class="evaluation-primary">筛选</ElButton>
       </form>
 
       <div class="evaluation-table-wrap" :aria-busy="loadingCases">
@@ -347,14 +359,19 @@ onBeforeUnmount(() => {
         <span>共 {{ caseTotal }} 条，第 {{ casePage }} / {{ casePages || 1 }} 页</span>
         <label>
           每页
-          <select :value="caseSize" @change="caseSize = Number(($event.target as HTMLSelectElement).value); casePage = 1; void loadCases()">
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-          </select>
+          <ElSelect
+            :model-value="caseSize"
+            class="evaluation-page-size"
+            aria-label="每页条数"
+            @update:model-value="changeCaseSize"
+          >
+            <ElOption :value="10" label="10" />
+            <ElOption :value="20" label="20" />
+            <ElOption :value="50" label="50" />
+          </ElSelect>
         </label>
-        <button :disabled="casePage <= 1 || loadingCases" @click="changeCasePage(casePage - 1)">上一页</button>
-        <button :disabled="casePage >= casePages || loadingCases" @click="changeCasePage(casePage + 1)">下一页</button>
+        <ElButton native-type="button" :disabled="casePage <= 1 || loadingCases" @click="changeCasePage(casePage - 1)">上一页</ElButton>
+        <ElButton native-type="button" :disabled="casePage >= casePages || loadingCases" @click="changeCasePage(casePage + 1)">下一页</ElButton>
       </div>
     </section>
 
@@ -369,18 +386,24 @@ onBeforeUnmount(() => {
         <form class="evaluation-create-form" @submit.prevent="createRun">
           <label>
             <span>批次名称</span>
-            <input v-model="runName" maxlength="100" placeholder="例如：正式评测-20260915" />
+            <ElInput
+              v-model="runName"
+              class="evaluation-create-input"
+              maxlength="100"
+              placeholder="例如：正式评测-20260915"
+              aria-label="批次名称"
+            />
           </label>
           <label>
             <span>回答风格</span>
-            <select v-model="answerStyle">
-              <option value="plain">通俗版</option>
-              <option value="legal">严谨版</option>
-            </select>
+            <ElSelect v-model="answerStyle" class="evaluation-create-select" aria-label="回答风格">
+              <ElOption label="通俗版" value="plain" />
+              <ElOption label="严谨版" value="legal" />
+            </ElSelect>
           </label>
-          <button class="evaluation-primary" type="submit" :disabled="creatingRun">
+          <ElButton class="evaluation-primary" type="primary" native-type="submit" :loading="creatingRun" :disabled="creatingRun">
             {{ creatingRun ? '创建中…' : '创建批次' }}
-          </button>
+          </ElButton>
         </form>
       </div>
       <p v-if="createError" class="evaluation-error" role="alert">{{ createError }}</p>
@@ -440,8 +463,8 @@ onBeforeUnmount(() => {
       </div>
       <div class="evaluation-pagination">
         <span>共 {{ runTotal }} 条，第 {{ runPage }} / {{ runPages || 1 }} 页</span>
-        <button :disabled="runPage <= 1 || loadingRuns" @click="changeRunPage(runPage - 1)">上一页</button>
-        <button :disabled="runPage >= runPages || loadingRuns" @click="changeRunPage(runPage + 1)">下一页</button>
+        <ElButton native-type="button" :disabled="runPage <= 1 || loadingRuns" @click="changeRunPage(runPage - 1)">上一页</ElButton>
+        <ElButton native-type="button" :disabled="runPage >= runPages || loadingRuns" @click="changeRunPage(runPage + 1)">下一页</ElButton>
       </div>
     </section>
 
@@ -618,6 +641,44 @@ onBeforeUnmount(() => {
   color: #9aa5b4;
 }
 
+.evaluation-filter-input,
+.evaluation-filter-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.evaluation-filter-input :deep(.el-input__wrapper),
+.evaluation-filter-select :deep(.el-select__wrapper) {
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font: inherit;
+}
+
+.evaluation-filter-input :deep(.el-input__inner),
+.evaluation-filter-select :deep(.el-select__placeholder),
+.evaluation-filter-select :deep(.el-select__selected-item) {
+  color: #354257;
+  font: inherit;
+}
+
+.evaluation-filter-input :deep(.el-input__inner::placeholder) {
+  color: #9aa5b4;
+}
+
+/* Keep the select's hover state visually aligned with the surrounding filter control. */
+.evaluation-filter-select:hover :deep(.el-select__wrapper),
+.evaluation-filter-select :deep(.el-select__wrapper:hover) {
+  border-color: transparent;
+  box-shadow: none !important;
+}
+
+.evaluation-filter-input :deep(.el-input__prefix-inner) {
+  color: #34455d;
+}
+
 .evaluation-primary {
   min-height: 38px;
   padding: 0 16px;
@@ -629,6 +690,11 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 650;
   transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.evaluation-primary.el-button {
+  height: 38px;
+  box-shadow: none;
 }
 
 .evaluation-primary:hover:not(:disabled) {
@@ -782,6 +848,20 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
+.evaluation-page-size {
+  width: 68px;
+}
+
+.evaluation-page-size :deep(.el-select__wrapper) {
+  min-height: 30px;
+  padding: 0 8px;
+  color: #354257;
+  border: 1px solid #d8e0da;
+  border-radius: 6px;
+  box-shadow: none;
+  font: inherit;
+}
+
 .evaluation-create-layout {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -825,6 +905,34 @@ onBeforeUnmount(() => {
 }
 
 .evaluation-create-form input::placeholder {
+  color: #a0a9b5;
+}
+
+.evaluation-create-input,
+.evaluation-create-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.evaluation-create-input :deep(.el-input__wrapper),
+.evaluation-create-select :deep(.el-select__wrapper) {
+  min-height: 38px;
+  padding: 0 10px;
+  color: #354257;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
+  box-shadow: none;
+  font: inherit;
+}
+
+.evaluation-create-input :deep(.el-input__inner),
+.evaluation-create-select :deep(.el-select__placeholder),
+.evaluation-create-select :deep(.el-select__selected-item) {
+  color: #354257;
+  font: inherit;
+}
+
+.evaluation-create-input :deep(.el-input__inner::placeholder) {
   color: #a0a9b5;
 }
 

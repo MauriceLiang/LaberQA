@@ -1,4 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
+import { ElButton, ElInput, ElSelect } from 'element-plus'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -51,17 +52,17 @@ describe('MissingKnowledgeView', () => {
     })
     expect(wrapper.text()).toContain('公司拖欠工资怎么办')
     expect(wrapper.text()).toContain('工资支付与欠薪')
-    expect(wrapper.text()).toContain('待补充')
+    expect(wrapper.findAllComponents(ElSelect)[0].props('modelValue')).toBe('PENDING')
     wrapper.unmount()
   })
 
   it('applies the status, keyword, and sort filters', async () => {
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
-    const selects = wrapper.findAll('select')
-    await wrapper.get('input[type="search"]').setValue('工资')
-    await selects[0].setValue('')
-    await selects[1].setValue('last_seen_desc')
+    const selects = wrapper.findAllComponents(ElSelect)
+    await wrapper.findAllComponents(ElInput)[0].vm.$emit('update:modelValue', '工资')
+    await selects[0].vm.$emit('update:modelValue', '')
+    await selects[1].vm.$emit('update:modelValue', 'last_seen_desc')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
@@ -97,7 +98,7 @@ describe('MissingKnowledgeView', () => {
       .mockResolvedValueOnce(page([item], 2))
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text() === '下一页')?.trigger('click')
+    await wrapper.get('.missing-page-next').trigger('click')
     await flushPromises()
 
     expect(missingKnowledgeApi.getMissingKnowledge).toHaveBeenLastCalledWith({
@@ -116,9 +117,9 @@ describe('MissingKnowledgeView', () => {
       .mockResolvedValueOnce(page([]))
     const wrapper = shallowMount(MissingKnowledgeView)
     await flushPromises()
-    await wrapper.findAll('select')[2].setValue('RESOLVED')
-    await wrapper.get('textarea').setValue('已补充工资支付材料')
-    await wrapper.findAll('button').find((button) => button.text() === '保存')?.trigger('click')
+    await wrapper.findAllComponents(ElSelect)[2].vm.$emit('update:modelValue', 'RESOLVED')
+    await wrapper.findAllComponents(ElInput)[1].vm.$emit('update:modelValue', '已补充工资支付材料')
+    await wrapper.findAllComponents(ElButton).find((button) => !button.classes('missing-filter-submit'))?.trigger('click')
     await flushPromises()
 
     expect(missingKnowledgeApi.updateMissingKnowledge).toHaveBeenCalledWith(1, {
@@ -144,7 +145,7 @@ describe('MissingKnowledgeView', () => {
     vi.mocked(missingKnowledgeApi.getMissingKnowledge).mockResolvedValueOnce(page([item]))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text() === '保存')?.trigger('click')
+    await wrapper.findAllComponents(ElButton).find((button) => !button.classes('missing-filter-submit'))?.trigger('click')
     await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('保存失败')
     wrapper.unmount()

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { ElButton } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 import { useSystemStore } from '@/stores/system'
@@ -130,10 +131,10 @@ onMounted(() => {
       </div>
 
       <div class="system-page-actions">
-        <button class="system-check-button" type="button" :disabled="system.loading" @click="checkHealth">
+        <ElButton class="system-check-button" type="primary" :loading="system.loading" :disabled="system.loading" @click="checkHealth">
           <Refresh :class="{ 'system-refresh-icon-spinning': system.loading }" aria-hidden="true" />
           <span>{{ system.loading ? '检查中…' : '检查后端连接' }}</span>
-        </button>
+        </ElButton>
         <p class="system-last-checked">最近检查 · {{ checkedAtLabel }}</p>
       </div>
     </header>

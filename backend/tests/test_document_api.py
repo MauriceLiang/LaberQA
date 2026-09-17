@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -245,6 +246,64 @@ class DocumentApiTests(unittest.TestCase):
         self.assertEqual(first.json()["data"]["status"], "PROCESSING")
         self.assertEqual(second.status_code, 409)
         self.assertEqual(second.json()["code"], 40901)
+
+    def test_delete_document_removes_all_derived_data_and_source_file(self) -> None:
+        with TestClient(app) as client:
+            service = self._service()
+            app.state.document_service = service
+            response = client.post(
+                "/api/documents/upload",
+                files={"file": ("law.txt", b"legal text", "text/plain")},
+            )
+            document_id = response.json()["data"]["document_id"]
+            document = service.repository.get_document(document_id)
+            chunks, total = service.repository.list_chunks(document_id)
+            self.assertEqual(total, 2)
+            source_path = Path(document["file_path"])
+            self.assertTrue(source_path.exists())
+
+            session_id = str(uuid4())
+            with service.repository._connection() as connection:
+                connection.execute(
+                    "INSERT INTO session (id, title) VALUES (?, ?)",
+                    (session_id, "引用测试"),
+                )
+                cursor = connection.execute(
+                    "INSERT INTO message (session_id, role, content) VALUES (?, ?, ?)",
+                    (session_id, "assistant", "回答"),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO citation (
+                        message_id, chunk_id, score, retrieval_score, rank_no
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (cursor.lastrowid, chunks[0]["id"], 0.9, 0.8, 1),
+                )
+
+            delete_response = client.delete(f"/api/documents/{document_id}")
+            self.assertEqual(delete_response.status_code, 200)
+            self.assertEqual(
+                delete_response.json(),
+                {"code": 0, "message": "deleted", "data": None},
+            )
+            self.assertIsNone(service.repository.get_document(document_id))
+            self.assertEqual(service.repository.list_chunks(document_id), ([], 0))
+            self.assertFalse(source_path.exists())
+            with service.repository._connection() as connection:
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM citation").fetchone()[0],
+                    0,
+                )
+            self.assertFalse(service.vector_store.is_ready)
+
+    def test_delete_missing_document_returns_not_found(self) -> None:
+        with TestClient(app) as client:
+            app.state.document_service = self._service()
+            response = client.delete("/api/documents/999")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], 40401)
 
     def test_missing_document_returns_not_found_for_detail_and_chunks(self) -> None:
         with TestClient(app) as client:

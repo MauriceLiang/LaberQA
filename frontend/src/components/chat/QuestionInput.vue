@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ElButton } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 
 import AnswerStyleSwitch from '@/components/chat/AnswerStyleSwitch.vue'
@@ -63,20 +64,20 @@ function handleKeydown(event: KeyboardEvent) {
       </div>
       <span class="input-actions">
         <span class="question-count">{{ modelValue.trim().length }}/2000</span>
-        <button v-if="streaming" class="secondary-button stop-button" type="button" @click="emit('stop')">
+        <ElButton v-if="streaming" class="secondary-button stop-button" native-type="button" @click="emit('stop')">
           停止生成
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-else
           class="primary-button send-button"
-          type="submit"
+          native-type="submit"
           :disabled="disabled || !modelValue.trim() || modelValue.trim().length > 2000"
         >
           发送问题
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           class="question-input-collapse"
-          type="button"
+          native-type="button"
           :aria-expanded="!collapsed"
           aria-controls="chat-question"
           aria-label="收起输入框"
@@ -85,14 +86,14 @@ function handleKeydown(event: KeyboardEvent) {
           @click="toggleCollapsed"
         >
           <ArrowDown aria-hidden="true" />
-        </button>
+        </ElButton>
       </span>
     </div>
   </form>
-  <button
+  <ElButton
     v-else
     class="question-input-expand"
-    type="button"
+    native-type="button"
     aria-expanded="false"
     aria-controls="chat-question"
     aria-label="展开输入框"
@@ -100,5 +101,5 @@ function handleKeydown(event: KeyboardEvent) {
     @click="toggleCollapsed"
   >
     <ArrowUp aria-hidden="true" />
-  </button>
+  </ElButton>
 </template>

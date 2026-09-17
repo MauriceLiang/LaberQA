@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -78,31 +79,31 @@ async function startNewConversation() {
       <section class="recent-conversations" aria-labelledby="recent-conversations-title">
         <div class="recent-heading">
           <h2 id="recent-conversations-title">最近对话</h2>
-          <button
+          <ElButton
             class="recent-add"
-            type="button"
+            text
             aria-label="新建对话"
             :disabled="sessionStore.streaming"
             @click="startNewConversation"
           >
             <CirclePlus aria-hidden="true" />
-          </button>
+          </ElButton>
         </div>
         <p v-if="sessionStore.sessionsError" class="recent-error" role="alert">
           {{ sessionStore.sessionsError }}
         </p>
         <div class="recent-conversation-list">
-          <button
+          <ElButton
             v-for="conversation in sessionStore.recentSessions"
             :key="conversation.id"
-            type="button"
             class="recent-conversation"
+            text
             :class="{ 'recent-conversation-active': isChatRoute && conversation.id === sessionStore.sessionId }"
             :disabled="sessionStore.streaming"
             @click="openRecentConversation(conversation)"
           >
             <span>{{ conversation.title || '未命名对话' }}</span>
-          </button>
+          </ElButton>
         </div>
       </section>
 
@@ -112,15 +113,15 @@ async function startNewConversation() {
     <section class="app-content">
       <header v-if="!isChatRoute" class="app-topbar">
         <div class="app-topbar-left">
-          <button
+          <ElButton
             class="topbar-new-chat"
-            type="button"
+            text
             :disabled="sessionStore.streaming"
             @click="startNewConversation"
           >
             <CirclePlus aria-hidden="true" />
             <span>新建对话</span>
-          </button>
+          </ElButton>
           <span class="knowledge-pill">
             <Document aria-hidden="true" />
             <span>基于已导入资料回答</span>

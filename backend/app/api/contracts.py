@@ -164,6 +164,21 @@ def get_document(
     )
 
 
+@router.delete(
+    "/documents/{id}",
+    response_model=ApiResponse[None],
+    responses=CONTRACT_RESPONSES,
+    tags=["documents"],
+    summary="Delete a document and its derived data",
+)
+def delete_document(
+    id: int,
+    service: Annotated[DocumentService, Depends(get_document_service)],
+) -> ApiResponse[None]:
+    service.delete_document(id)
+    return ApiResponse(code=0, message="deleted", data=None)
+
+
 @router.post(
     "/documents/{id}/reimport",
     response_model=ApiResponse[DocumentReimportAccepted],

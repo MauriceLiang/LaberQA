@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import { CirclePlus, Document } from '@element-plus/icons-vue'
 
 defineProps<{
@@ -15,15 +16,15 @@ defineEmits<{
 <template>
   <header class="session-header">
     <div class="session-header-actions">
-      <button
+      <ElButton
         class="new-session-button"
-        type="button"
+        type="primary"
         :disabled="historyLoading || streaming"
         @click="$emit('newSession')"
       >
         <CirclePlus aria-hidden="true" />
         <span>新建对话</span>
-      </button>
+      </ElButton>
       <span class="knowledge-pill">
         <Document aria-hidden="true" />
         <span>基于已导入资料回答</span>

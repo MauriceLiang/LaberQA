@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 
 import {
   createExperiment,
@@ -273,19 +274,26 @@ onBeforeUnmount(() => {
         <form class="experiment-create-form" @submit.prevent="submitExperiment">
           <label>
             <span>实验名称</span>
-            <input v-model="experimentName" maxlength="100" required placeholder="例如：检索参数对比-20260915" />
+            <ElInput
+              v-model="experimentName"
+              class="experiment-create-input"
+              maxlength="100"
+              required
+              placeholder="例如：检索参数对比-20260915"
+              aria-label="实验名称"
+            />
           </label>
           <label>
             <span>回答风格</span>
-            <select v-model="answerStyle">
-              <option value="">使用默认值</option>
-              <option value="plain">通俗版</option>
-              <option value="legal">严谨版</option>
-            </select>
+            <ElSelect v-model="answerStyle" class="experiment-create-select" placeholder="使用默认值" aria-label="回答风格">
+              <ElOption label="使用默认值" value="" />
+              <ElOption label="通俗版" value="plain" />
+              <ElOption label="严谨版" value="legal" />
+            </ElSelect>
           </label>
-          <button class="experiment-primary" type="submit" :disabled="creating">
+          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
             {{ creating ? '创建中…' : '创建实验' }}
-          </button>
+          </ElButton>
         </form>
       </div>
       <p v-if="createError" class="experiment-error" role="alert">{{ createError }}</p>
@@ -344,8 +352,8 @@ onBeforeUnmount(() => {
       </div>
       <div class="experiment-pagination">
         <span>共 {{ total }} 条，第 {{ page }} / {{ pages || 1 }} 页</span>
-        <button :disabled="page <= 1 || loadingList" @click="changePage(page - 1)">上一页</button>
-        <button :disabled="page >= pages || loadingList" @click="changePage(page + 1)">下一页</button>
+        <ElButton native-type="button" :disabled="page <= 1 || loadingList" @click="changePage(page - 1)">上一页</ElButton>
+        <ElButton native-type="button" :disabled="page >= pages || loadingList" @click="changePage(page + 1)">下一页</ElButton>
       </div>
     </section>
 
@@ -589,6 +597,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 650;
   transition: background 0.15s ease, border-color 0.15s ease;
+  box-shadow: none;
 }
 
 .experiment-primary:hover:not(:disabled) {
@@ -641,6 +650,33 @@ onBeforeUnmount(() => {
   border-radius: 7px;
   outline: 0;
   font: inherit;
+}
+
+.experiment-create-input,
+.experiment-create-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.experiment-create-input :deep(.el-input__wrapper),
+.experiment-create-select :deep(.el-select__wrapper) {
+  min-height: 38px;
+  padding: 0 10px;
+  color: #354257;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
+  box-shadow: none;
+  font: inherit;
+}
+
+.experiment-create-input :deep(.el-input__inner) {
+  color: #354257;
+  font: inherit;
+}
+
+.experiment-create-input :deep(.el-input__inner::placeholder),
+.experiment-create-select :deep(.el-select__placeholder) {
+  color: #a0a9b5;
 }
 
 .experiment-create-form input::placeholder {

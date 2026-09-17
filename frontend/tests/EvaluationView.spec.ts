@@ -1,4 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
+import { ElInput, ElSelect } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as evaluationsApi from '@/api/evaluations'
@@ -117,9 +118,9 @@ describe('EvaluationView', () => {
       page: 1, size: 20, topic: undefined, expected_type: undefined, is_multi_turn: undefined,
     })
 
-    await wrapper.get('input[type="search"]').setValue('工资')
-    await wrapper.findAll('select')[0].setValue('REJECT')
-    await wrapper.findAll('select')[1].setValue('true')
+    await wrapper.findAllComponents(ElInput)[0].vm.$emit('update:modelValue', '工资')
+    await wrapper.findAllComponents(ElSelect)[0].vm.$emit('update:modelValue', 'REJECT')
+    await wrapper.findAllComponents(ElSelect)[1].vm.$emit('update:modelValue', 'true')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
@@ -134,8 +135,8 @@ describe('EvaluationView', () => {
     const wrapper = shallowMount(EvaluationView)
     await flushPromises()
 
-    await wrapper.get('input[placeholder="例如：正式评测-20260915"]').setValue('工资回归')
-    await wrapper.findAll('select')[3].setValue('legal')
+    await wrapper.findAllComponents(ElInput)[1].vm.$emit('update:modelValue', '工资回归')
+    await wrapper.findAllComponents(ElSelect)[3].vm.$emit('update:modelValue', 'legal')
     await wrapper.get('.evaluation-create-form').trigger('submit')
     await flushPromises()
     expect(evaluationsApi.createEvaluationRun).toHaveBeenCalledWith({
@@ -146,7 +147,7 @@ describe('EvaluationView', () => {
       run_id: 9, status: 'PENDING', progress_current: 0, progress_total: 1, error_message: null,
     })
     await wrapper.get('input[aria-label="选择用例 3"]').setValue(true)
-    await wrapper.get('input[placeholder="例如：正式评测-20260915"]').setValue('指定用例')
+    await wrapper.findAllComponents(ElInput)[1].vm.$emit('update:modelValue', '指定用例')
     await wrapper.get('.evaluation-create-form').trigger('submit')
     await flushPromises()
     expect(evaluationsApi.createEvaluationRun).toHaveBeenLastCalledWith({

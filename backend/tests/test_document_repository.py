@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -84,3 +85,45 @@ def test_chunk_insert_is_transactional_on_unique_number_conflict(
     chunks, total = repository.list_chunks(document["id"])
     assert total == 0
     assert chunks == []
+
+
+def test_delete_document_removes_chunks_and_citations_in_one_transaction(
+    repository: DocumentRepository,
+) -> None:
+    document = repository.create_document(
+        file_name="待删除.txt", file_type="txt", file_path="/tmp/to-delete.txt"
+    )
+    chunks = repository.insert_chunks(
+        document["id"],
+        [
+            {"chunk_no": 1, "content": "第一段"},
+            {"chunk_no": 2, "content": "第二段"},
+        ],
+    )
+    session_id = str(uuid4())
+    with repository._connection() as connection:
+        connection.execute(
+            "INSERT INTO session (id, title) VALUES (?, ?)", (session_id, "测试")
+        )
+        cursor = connection.execute(
+            "INSERT INTO message (session_id, role, content) VALUES (?, ?, ?)",
+            (session_id, "assistant", "回答"),
+        )
+        connection.execute(
+            """
+            INSERT INTO citation (
+                message_id, chunk_id, score, retrieval_score, rank_no
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (cursor.lastrowid, chunks[0]["id"], 0.9, 0.8, 1),
+        )
+
+    deleted = repository.delete_document(document["id"])
+
+    assert deleted is not None
+    assert deleted["document"]["id"] == document["id"]
+    assert deleted["chunk_ids"] == [chunk["id"] for chunk in chunks]
+    assert repository.get_document(document["id"]) is None
+    assert repository.list_chunks(document["id"]) == ([], 0)
+    with repository._connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM citation").fetchone()[0] == 0

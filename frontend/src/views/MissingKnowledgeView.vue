@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import { Filter, Search } from '@element-plus/icons-vue'
 
 import {
@@ -78,8 +79,8 @@ function changePage(nextPage: number) {
   void loadItems()
 }
 
-function changeSize(nextSize: number) {
-  size.value = nextSize
+function changeSize(nextSize: number | string) {
+  size.value = Number(nextSize)
   page.value = 1
   void loadItems()
 }
@@ -141,29 +142,35 @@ onMounted(() => void loadItems())
       <form class="missing-knowledge-filters" @submit.prevent="applyFilters">
         <label class="missing-filter-control missing-filter-search">
           <span class="sr-only">关键词</span>
-          <Search aria-hidden="true" />
-          <input v-model="keywordInput" type="search" aria-label="搜索问题或缺失方向" placeholder="搜索问题或缺失方向" />
+          <ElInput
+            v-model="keywordInput"
+            class="missing-filter-input"
+            type="search"
+            aria-label="搜索问题或缺失方向"
+            placeholder="搜索问题或缺失方向"
+          >
+            <template #prefix><Search aria-hidden="true" /></template>
+          </ElInput>
         </label>
         <label class="missing-filter-control">
           <span class="sr-only">状态</span>
-          <select v-model="statusFilter" aria-label="按状态筛选">
-            <option value="">全部状态</option>
-            <option value="PENDING">待补充</option>
-            <option value="RESOLVED">已补充</option>
-            <option value="IGNORED">忽略</option>
-          </select>
+          <ElSelect v-model="statusFilter" class="missing-filter-select" aria-label="按状态筛选" placeholder="全部状态" clearable>
+            <ElOption label="待补充" value="PENDING" />
+            <ElOption label="已补充" value="RESOLVED" />
+            <ElOption label="忽略" value="IGNORED" />
+          </ElSelect>
         </label>
         <label class="missing-filter-control">
           <span class="sr-only">排序</span>
-          <select v-model="sortFilter" aria-label="按拒答次数排序">
-            <option value="count_desc">拒答次数</option>
-            <option value="last_seen_desc">最近出现</option>
-          </select>
+          <ElSelect v-model="sortFilter" class="missing-filter-select" aria-label="按拒答次数排序">
+            <ElOption label="拒答次数" value="count_desc" />
+            <ElOption label="最近出现" value="last_seen_desc" />
+          </ElSelect>
         </label>
-        <button type="submit" class="missing-knowledge-primary missing-filter-submit">
+        <ElButton type="primary" native-type="submit" class="missing-knowledge-primary missing-filter-submit">
           <Filter aria-hidden="true" />
           <span>筛选</span>
-        </button>
+        </ElButton>
       </form>
 
       <div class="missing-knowledge-table-wrap" :aria-busy="loading">
@@ -190,26 +197,32 @@ onMounted(() => void loadItems())
                 <span>{{ formatDate(item.last_seen_at) }}</span>
               </td>
               <td class="edit-cell">
-                <select class="missing-status-select" v-model="drafts[item.id].status" :aria-label="`更新 ${topicLabel(item.topic_key)} 的状态`">
-                  <option value="PENDING">待补充</option>
-                  <option value="RESOLVED">已补充</option>
-                  <option value="IGNORED">忽略</option>
-                </select>
-                <textarea
+                <ElSelect
+                  v-model="drafts[item.id].status"
+                  class="missing-status-select"
+                  :aria-label="`更新 ${topicLabel(item.topic_key)} 的状态`"
+                >
+                  <ElOption label="待补充" value="PENDING" />
+                  <ElOption label="已补充" value="RESOLVED" />
+                  <ElOption label="忽略" value="IGNORED" />
+                </ElSelect>
+                <ElInput
                   v-model="drafts[item.id].note"
                   class="missing-note-input"
+                  type="textarea"
                   :aria-label="`更新 ${topicLabel(item.topic_key)} 的备注`"
-                  rows="1"
+                  :rows="1"
                   placeholder="添加处理备注"
                 />
               </td>
               <td>
-                <button
-                  type="button"
+                <ElButton
+                  type="primary"
                   class="missing-knowledge-primary"
+                  :loading="savingId === item.id"
                   :disabled="savingId === item.id"
                   @click="save(item)"
-                >{{ savingId === item.id ? '保存中…' : '保存' }}</button>
+                >{{ savingId === item.id ? '保存中…' : '保存' }}</ElButton>
               </td>
             </tr>
             <tr v-if="!loading && items.length === 0">
@@ -223,14 +236,19 @@ onMounted(() => void loadItems())
         <span>共 {{ total }} 条，第 {{ page }} / {{ pages || 1 }} 页</span>
         <label>
           每页
-          <select :value="size" @change="changeSize(Number(($event.target as HTMLSelectElement).value))">
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-          </select>
+          <ElSelect
+            :model-value="size"
+            class="missing-page-size"
+            aria-label="每页条数"
+            @update:model-value="changeSize"
+          >
+            <ElOption :value="10" label="10" />
+            <ElOption :value="20" label="20" />
+            <ElOption :value="50" label="50" />
+          </ElSelect>
         </label>
-        <button :disabled="page <= 1 || loading" @click="changePage(page - 1)">上一页</button>
-        <button :disabled="page >= pages || loading" @click="changePage(page + 1)">下一页</button>
+        <ElButton class="missing-page-previous" native-type="button" :disabled="page <= 1 || loading" @click="changePage(page - 1)">上一页</ElButton>
+        <ElButton class="missing-page-next" native-type="button" :disabled="page >= pages || loading" @click="changePage(page + 1)">下一页</ElButton>
       </div>
     </section>
   </section>
