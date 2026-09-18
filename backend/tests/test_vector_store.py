@@ -288,7 +288,10 @@ def test_vector_store_implements_langchain_interface_and_preserves_documents(
     assert isinstance(store, VectorStore)
     documents = store.similarity_search("合同", k=2)
     assert [document.id for document in documents] == ["101", "102"]
-    assert documents[0].metadata == {"document_id": 8, "chunk_id": 101}
+    assert documents[0].metadata["document_id"] == 8
+    assert documents[0].metadata["chunk_id"] == 101
+    assert documents[0].metadata["score"] == pytest.approx(1.0)
+    assert documents[0].metadata["retrieval_score"] == pytest.approx(1.0)
     assert store._langchain_store is not None
     assert store._langchain_store.index_to_docstore_id == {101: "101", 102: "102"}
     filtered = store.similarity_search(
@@ -312,8 +315,8 @@ def test_add_documents_accepts_precomputed_vectors_and_stable_chunk_metadata(
     assert store.add_documents(documents, vectors=[[1.0, 0.0]]) == ["201"]
     result = store.similarity_search_by_vector([1.0, 0.0], k=1)
     assert result[0].page_content == "劳动关系"
-    assert result[0].metadata == {
-        "document_id": 10,
-        "chunk_no": 1,
-        "chunk_id": 201,
-    }
+    assert result[0].metadata["document_id"] == 10
+    assert result[0].metadata["chunk_no"] == 1
+    assert result[0].metadata["chunk_id"] == 201
+    assert result[0].metadata["score"] == pytest.approx(1.0)
+    assert result[0].metadata["retrieval_score"] == pytest.approx(1.0)

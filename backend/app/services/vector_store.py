@@ -332,7 +332,7 @@ class VectorStoreService(VectorStore):
             raise TypeError(f"不支持的向量库参数: {unexpected}")
         hits = self.search(embedding, max(k, fetch_k))
         results = [
-            (self._documents[chunk_id], score)
+            (self._document_with_score(self._documents[chunk_id], score), score)
             for chunk_id, score in hits
             if chunk_id in self._documents
         ]
@@ -361,6 +361,17 @@ class VectorStoreService(VectorStore):
                 if score >= float(score_threshold)
             ]
         return results[:k]
+
+    @staticmethod
+    def _document_with_score(document: Document, score: float) -> Document:
+        metadata = dict(document.metadata)
+        metadata["score"] = float(score)
+        metadata["retrieval_score"] = float(score)
+        return Document(
+            id=document.id,
+            page_content=document.page_content,
+            metadata=metadata,
+        )
 
     @staticmethod
     def _index_ids(index: faiss.IndexIDMap2) -> list[int]:

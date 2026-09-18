@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -21,7 +22,7 @@ from app.schemas.contracts import AnswerStyle, ToolExecutionItem
 from app.services.compliance import COMPLIANCE_NOTICE
 from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import MissingKnowledgeReason
-from app.services.retrieval import LaborKnowledgeRetriever, RetrievalService
+from app.services.retrieval import RetrievalService
 
 logger = logging.getLogger(__name__)
 _PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
@@ -50,10 +51,8 @@ class RagChain:
         chat_model: BaseChatModel,
         config: Settings = settings,
     ) -> None:
-        self.retriever = LaborKnowledgeRetriever(
-            retrieval_service=retrieval_service,
-            name="labor_knowledge_retriever",
-        )
+        self.retrieval_service = retrieval_service
+        self.retriever = getattr(retrieval_service, "retriever", None)
         self.chat_model = ensure_chat_model(chat_model)
         self.config = config
         self.answer_prompt = _answer_prompt()
@@ -105,8 +104,14 @@ class RagChain:
             return question
 
     async def retrieve(self, question: str) -> list[dict[str, Any]]:
-        documents = await self.retriever.ainvoke(question)
-        return [_evidence_from_document(document) for document in documents]
+        if self.retriever is not None:
+            documents = await self.retriever.ainvoke(question)
+            return [_evidence_from_document(document) for document in documents]
+        aretrieve = getattr(self.retrieval_service, "aretrieve", None)
+        if callable(aretrieve):
+            return await aretrieve(question)
+        evidence = await asyncio.to_thread(self.retrieval_service.retrieve, question)
+        return [dict(item) for item in evidence]
 
     async def judge_evidence(
         self,

@@ -10,7 +10,6 @@ from app.core.config import Settings
 from app.schemas.contracts import AnswerStyle
 from app.services.llm import ModelUnavailableError
 from app.services.rag_chain import REFUSAL_TEXT, RagChain
-from app.services.retrieval import LaborKnowledgeRetriever
 
 
 class FakeRetrieval:
@@ -73,25 +72,26 @@ def _config() -> Settings:
     )
 
 
-def test_langchain_retriever_preserves_source_metadata() -> None:
+def test_rag_chain_uses_domain_retrieval_service_fallback_for_legacy_fakes() -> None:
     retrieval = FakeRetrieval()
-    retriever = LaborKnowledgeRetriever(retrieval_service=retrieval)
+    chain = RagChain(retrieval, FakeLlm(), _config())  # type: ignore[arg-type]
 
-    documents = asyncio.run(retriever.ainvoke("劳动合同需要签订吗？"))
+    evidence = asyncio.run(chain.retrieve("劳动合同需要签订吗？"))
 
     assert retrieval.queries == ["劳动合同需要签订吗？"]
-    assert len(documents) == 1
-    assert documents[0].page_content == "建立劳动关系后，应当订立书面劳动合同。"
-    assert documents[0].metadata == {
-        "chunk_id": 7,
-        "document_id": 3,
-        "file_name": "劳动合同法.pdf",
-        "chunk_no": 4,
-        "score": 0.91,
-        "retrieval_score": 0.91,
-        "rerank_score": None,
-        "rank_no": 1,
-    }
+    assert evidence == [
+        {
+            "chunk_id": 7,
+            "document_id": 3,
+            "file_name": "劳动合同法.pdf",
+            "chunk_no": 4,
+            "content": "建立劳动关系后，应当订立书面劳动合同。",
+            "score": 0.91,
+            "retrieval_score": 0.91,
+            "rerank_score": None,
+            "rank_no": 1,
+        }
+    ]
 
 
 def test_rag_chain_uses_prompt_runnable_and_preserves_evidence_text() -> None:

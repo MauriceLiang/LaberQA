@@ -1,11 +1,13 @@
+import asyncio
 from typing import Any
 
 import pytest
+from langchain_core.runnables import Runnable
 
 from app.core.config import Settings
 from app.services.rerank import RerankService
-from app.services.retrieval import RetrievalService
-from app.services.vector_store import VectorStoreNotInitialized
+from app.services.retrieval import DomainRetrievalService, RetrievalService
+from app.services.vector_store import VectorStoreNotInitialized, VectorStoreService
 
 
 class FakeEmbedding:
@@ -87,6 +89,38 @@ def test_retrieval_maps_only_successful_chunks_and_preserves_faiss_order() -> No
     assert evidence[0]["file_name"] == "劳动合同法.pdf"
     assert evidence[0]["retrieval_score"] == evidence[0]["score"] == 0.91
     assert evidence[0]["rerank_score"] is None
+
+
+def test_domain_retrieval_uses_langchain_vectorstore_retriever_and_sqlite_source(
+    tmp_path: Any,
+) -> None:
+    config = Settings(
+        _env_file=None,
+        database_url="sqlite:////tmp/domain-retrieval-test.db",
+        rag_top_k=2,
+        faiss_dir=tmp_path / "faiss",
+    )
+    vector_store = VectorStoreService(
+        config,
+        embedding_service=FakeEmbedding(),
+        index_dir=tmp_path / "faiss" / "production",
+    )
+    vector_store.add([(1, [0.1, 0.2]), (2, [0.2, 0.1])])
+    service = DomainRetrievalService(
+        config,
+        repository=FakeRepository(),
+        embedding_service=FakeEmbedding(),
+        vector_store=vector_store,
+    )
+
+    assert isinstance(service.retriever, Runnable)
+    evidence = asyncio.run(service.aretrieve("测试问题"))
+
+    assert [item["chunk_id"] for item in evidence] == [1, 2]
+    assert evidence[0]["content"] == "证据一"
+    assert evidence[0]["retrieval_score"] == pytest.approx(1.0)
+    assert evidence[1]["document_id"] == 9
+    assert RetrievalService is DomainRetrievalService
 
 
 def test_retrieval_rejects_missing_index_before_loading_embedding_model() -> None:
