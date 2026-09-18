@@ -59,7 +59,7 @@ async function startNewConversation() {
         </div>
         <div>
           <strong>劳动权益咨询问答台</strong>
-          <span>LaberQA</span>
+          <span>LaborQA</span>
         </div>
       </div>
 

@@ -441,6 +441,7 @@ class EvaluationRepository:
 
     @staticmethod
     def _case_item(row: sqlite3.Row) -> dict[str, Any]:
+        columns = set(row.keys())
         return {
             "id": int(row["id"]),
             "topic": row["topic"],
@@ -449,16 +450,14 @@ class EvaluationRepository:
             "expected_points": json.loads(row["expected_points_json"]),
             "expected_sources": json.loads(row["expected_sources_json"]),
             "should_show_compliance": bool(row["should_show_compliance"]),
-            "origin": row["origin"] if "origin" in row.keys() else "BUILTIN",
-            "status": row["status"] if "status" in row.keys() else "ACTIVE",
-            "version": int(row["version"] if "version" in row.keys() else 1),
+            "origin": row["origin"] if "origin" in columns else "BUILTIN",
+            "status": row["status"] if "status" in columns else "ACTIVE",
+            "version": int(row["version"] if "version" in columns else 1),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"]
-            if "updated_at" in row.keys() and row["updated_at"]
+            if "updated_at" in columns and row["updated_at"]
             else row["created_at"],
-            "archived_at": row["archived_at"]
-            if "archived_at" in row.keys()
-            else None,
+            "archived_at": row["archived_at"] if "archived_at" in columns else None,
         }
 
     @staticmethod

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import Field, StringConstraints, model_validator
 
+from app.rag.constants import LEGACY_SPLITTER_VERSION
 from app.schemas.common import ApiModel, PageQuery, UtcDateTime
 
 Score = Annotated[float, Field(ge=0, le=1)]
@@ -192,7 +193,10 @@ class EvaluationCasePayload(ApiModel):
 
     @model_validator(mode="after")
     def validate_expected_points(self) -> "EvaluationCasePayload":
-        if self.expected_type is EvaluationExpectedType.ANSWER and not self.expected_points:
+        if (
+            self.expected_type is EvaluationExpectedType.ANSWER
+            and not self.expected_points
+        ):
             raise ValueError("ANSWER cases require at least one expected point")
         return self
 
@@ -244,7 +248,10 @@ class EvaluationRunCreate(ApiModel):
             )
         elif self.case_scope is EvaluationCaseScope.SELECTED and not self.case_ids:
             raise ValueError("SELECTED runs require case_ids")
-        elif self.case_scope is not EvaluationCaseScope.SELECTED and self.case_ids is not None:
+        elif (
+            self.case_scope is not EvaluationCaseScope.SELECTED
+            and self.case_ids is not None
+        ):
             raise ValueError("case_ids is only valid for SELECTED runs")
         return self
 
@@ -264,16 +271,26 @@ class EvaluationRunSummary(JobProgress):
     updated_at: UtcDateTime
 
 
-class EvaluationRunConfig(ApiModel):
-    answer_style: AnswerStyle
-    case_scope: EvaluationCaseScope | None = None
+class LangChainRuntimeConfig(ApiModel):
+    langchain_version: str
+    chat_provider: str
     llm_model: str
-    evaluator_model: str
-    evaluator_prompt_version: str
     embedding_provider: Literal["local", "api"]
     embedding_model: str
     embedding_normalize: bool
+    splitter_type: str
+    splitter_version: str
+    vectorstore_type: str
+    retrieval_type: str
+    rerank_model: str | None
     prompt_version: str
+
+
+class EvaluationRunConfig(LangChainRuntimeConfig):
+    answer_style: AnswerStyle
+    case_scope: EvaluationCaseScope | None = None
+    evaluator_model: str
+    evaluator_prompt_version: str
     chunk_size: int
     chunk_overlap: int
     top_k: int
@@ -360,9 +377,15 @@ class ExperimentCreate(ApiModel):
     answer_style: AnswerStyle
     configs: list[ExperimentConfig] = Field(min_length=1)
     case_scope: EvaluationCaseScope | None = None
-    config_names: list[
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-    ] | None = None
+    config_names: (
+        list[
+            Annotated[
+                str,
+                StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+            ]
+        ]
+        | None
+    ) = None
 
     @model_validator(mode="after")
     def unique_case_ids(self) -> "ExperimentCreate":
@@ -376,9 +399,14 @@ class ExperimentCreate(ApiModel):
             )
         elif self.case_scope is EvaluationCaseScope.SELECTED and not self.case_ids:
             raise ValueError("SELECTED experiments require case_ids")
-        elif self.case_scope is not EvaluationCaseScope.SELECTED and self.case_ids is not None:
+        elif (
+            self.case_scope is not EvaluationCaseScope.SELECTED
+            and self.case_ids is not None
+        ):
             raise ValueError("case_ids is only valid for SELECTED experiments")
-        if self.config_names is not None and len(self.config_names) != len(self.configs):
+        if self.config_names is not None and len(self.config_names) != len(
+            self.configs
+        ):
             raise ValueError("config_names must match configs")
         return self
 
@@ -438,6 +466,7 @@ class ExperimentDetail(JobProgress):
     id: int
     name: str
     embedding_signature: EmbeddingSignature
+    runtime_config: LangChainRuntimeConfig
     archived_at: UtcDateTime | None = None
     best_config_index: int | None
     config_names: list[str] = Field(default_factory=list)
@@ -465,7 +494,9 @@ class RetrievalStrategyCreate(ApiModel):
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
     ]
-    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] = ""
+    description: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=255)
+    ] = ""
     config: ExperimentConfig
 
 
@@ -520,4 +551,5 @@ class RetrievalPreviewResponse(ApiModel):
 class IndexMeta(EmbeddingSignature):
     chunk_size: int = Field(ge=1)
     chunk_overlap: int = Field(ge=0)
+    splitter_version: str = LEGACY_SPLITTER_VERSION
     created_at: UtcDateTime

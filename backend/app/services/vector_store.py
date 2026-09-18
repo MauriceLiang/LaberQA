@@ -2,17 +2,28 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Protocol
+from typing import Any, Protocol
 
 import faiss
 import numpy as np
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.vectorstores import FAISS as LangChainFAISS
+from langchain_community.vectorstores.utils import DistanceStrategy
+from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
 
 from app.core.config import Settings, settings
+from app.rag.constants import (
+    COMPATIBLE_SPLITTER_VERSIONS,
+    CURRENT_SPLITTER_VERSION,
+)
 from app.schemas.contracts import EmbeddingSignature, IndexMeta
 
 logger = logging.getLogger(__name__)
@@ -44,7 +55,27 @@ class VectorStorePersistenceError(VectorStoreError):
     """Raised when the index and its metadata cannot be read or written."""
 
 
-class VectorStoreService:
+class _UnavailableEmbeddings(Embeddings):
+    """Placeholder used when a store is only used with precomputed vectors."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        del texts
+        raise ValueError("该向量库未配置文本 Embeddings")
+
+    def embed_query(self, text: str) -> list[float]:
+        del text
+        raise ValueError("该向量库未配置查询 Embeddings")
+
+
+class VectorStoreService(VectorStore):
+    """Persisted LangChain FAISS store with LaborQA's business compatibility.
+
+    SQLite remains the source of truth for chunk content.  The LangChain
+    ``FAISS`` instance therefore keeps a small in-memory Document projection
+    containing the stable ``chunk_id`` metadata, while this service continues
+    to own signature checks, atomic persistence, and lifecycle operations.
+    """
+
     def __init__(
         self,
         config: Settings = settings,
@@ -57,6 +88,8 @@ class VectorStoreService:
         self.index_path = self.index_dir / "index.faiss"
         self.meta_path = self.index_dir / "index_meta.json"
         self._index: faiss.IndexIDMap2 | None = None
+        self._langchain_store: LangChainFAISS | None = None
+        self._documents: dict[int, Document] = {}
         self._meta: IndexMeta | None = None
         self._lock = _PROCESS_LOCK
 
@@ -86,6 +119,8 @@ class VectorStoreService:
             index_exists = self.index_path.is_file()
             meta_exists = self.meta_path.is_file()
             self._index = None
+            self._langchain_store = None
+            self._documents = {}
             self._meta = None
             if not index_exists and not meta_exists:
                 return False
@@ -125,8 +160,16 @@ class VectorStoreService:
                 raise VectorStorePersistenceError("FAISS 向量索引无效") from exc
 
             if loaded_index.ntotal == 0:
+                self._meta = meta
                 return False
             self._index = loaded_index
+            self._documents = {
+                chunk_id: self._document_for_chunk_id(chunk_id)
+                for chunk_id in self._index_ids(loaded_index)
+            }
+            self._langchain_store = self._build_langchain_store(
+                loaded_index, self._documents
+            )
             return True
 
     def is_signature_compatible(
@@ -139,15 +182,275 @@ class VectorStoreService:
             return self._same_embedding_signature(self._meta, expected) and (
                 self._meta.chunk_size == self.config.chunk_size
                 and self._meta.chunk_overlap == self.config.chunk_overlap
+                and self._meta.splitter_version in COMPATIBLE_SPLITTER_VERSIONS
             )
 
-    def add(self, chunks_with_vectors: Sequence[tuple[int, Sequence[float]]]) -> None:
+    def add(
+        self,
+        chunks_with_vectors: Sequence[tuple[int, Sequence[float]]],
+        *,
+        documents: Sequence[Document] | None = None,
+    ) -> None:
+        """Compatibility API; production ingestion uses ``add_documents``."""
+        self._add_with_documents(chunks_with_vectors, documents)
+
+    def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:
+        """Add LangChain Documents with caller-supplied or computed vectors."""
+        if not documents:
+            return []
+        vectors = kwargs.pop("vectors", None)
+        if vectors is None:
+            if self.embedding_service is None or not hasattr(
+                self.embedding_service, "embed_documents"
+            ):
+                raise ValueError("该向量库未配置文本 Embeddings")
+            vectors = self.embedding_service.embed_documents(
+                [document.page_content for document in documents]
+            )
+        if len(vectors) != len(documents):
+            raise ValueError("文档数量与向量数量不一致")
+        ids = kwargs.pop("ids", None)
+        if ids is not None and len(ids) != len(documents):
+            raise ValueError("文档数量与 ids 数量不一致")
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"不支持的向量库参数: {unexpected}")
+        next_id = max(self._documents, default=0) + 1
+        chunk_ids: list[int] = []
+        for index, document in enumerate(documents):
+            explicit_id = ids[index] if ids is not None else None
+            chunk_id = self._document_chunk_id(document, explicit_id, next_id)
+            if explicit_id is None and not document.metadata.get("chunk_id"):
+                next_id = chunk_id + 1
+            chunk_ids.append(chunk_id)
+        self._add_with_documents(list(zip(chunk_ids, vectors, strict=True)), documents)
+        return [str(chunk_id) for chunk_id in chunk_ids]
+
+    def add_texts(
+        self,
+        texts: Sequence[str],
+        metadatas: list[dict[str, Any]] | None = None,
+        *,
+        ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Implement the LangChain VectorStore text insertion contract."""
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"不支持的向量库参数: {unexpected}")
+        if self.embedding_service is None or not hasattr(
+            self.embedding_service, "embed_documents"
+        ):
+            raise ValueError("该向量库未配置文本 Embeddings")
+        values = list(texts)
+        metadata_values = metadatas or [{} for _ in values]
+        if len(metadata_values) != len(values):
+            raise ValueError("文本数量与 metadata 数量不一致")
+        documents = [
+            Document(page_content=text, metadata=dict(metadata))
+            for text, metadata in zip(values, metadata_values, strict=True)
+        ]
+        return self.add_documents(documents, ids=ids)
+
+    @classmethod
+    def from_texts(
+        cls,
+        texts: list[str],
+        embedding: Embeddings,
+        metadatas: list[dict[str, Any]] | None = None,
+        *,
+        ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> "VectorStoreService":
+        """Create a persisted store through the standard LangChain factory."""
+        config = kwargs.pop("config", settings)
+        index_dir = kwargs.pop("index_dir", None)
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"不支持的向量库参数: {unexpected}")
+        if ids is not None and len(ids) != len(texts):
+            raise ValueError("文本数量与 ids 数量不一致")
+        metadata_values = metadatas or [{} for _ in texts]
+        if len(metadata_values) != len(texts):
+            raise ValueError("文本数量与 metadata 数量不一致")
+        documents = [
+            Document(
+                id=(ids[index] if ids is not None else str(index + 1)),
+                page_content=text,
+                metadata=dict(metadata_values[index]),
+            )
+            for index, text in enumerate(texts)
+        ]
+        vectors = embedding.embed_documents(texts)
+        store = cls(
+            config=config,
+            embedding_service=embedding,
+            index_dir=index_dir,
+        )
+        store.add_documents(documents, vectors=vectors, ids=ids)
+        return store
+
+    def similarity_search(
+        self, query: str, k: int = 4, **kwargs: Any
+    ) -> list[Document]:
+        return [
+            document
+            for document, _ in self.similarity_search_with_score(query, k=k, **kwargs)
+        ]
+
+    def similarity_search_with_score(
+        self, query: str, k: int = 4, **kwargs: Any
+    ) -> list[tuple[Document, float]]:
+        if self.embedding_service is None or not hasattr(
+            self.embedding_service, "embed_query"
+        ):
+            raise ValueError("该向量库未配置查询 Embeddings")
+        return self.similarity_search_with_score_by_vector(
+            self.embedding_service.embed_query(query), k=k, **kwargs
+        )
+
+    def similarity_search_by_vector(
+        self, embedding: list[float], k: int = 4, **kwargs: Any
+    ) -> list[Document]:
+        return [
+            document
+            for document, _ in self.similarity_search_with_score_by_vector(
+                embedding, k=k, **kwargs
+            )
+        ]
+
+    def similarity_search_with_score_by_vector(
+        self, embedding: list[float], k: int = 4, **kwargs: Any
+    ) -> list[tuple[Document, float]]:
+        if k < 1:
+            return []
+        score_threshold = kwargs.pop("score_threshold", None)
+        filter_value = kwargs.pop("filter", None)
+        fetch_k = int(kwargs.pop("fetch_k", k))
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"不支持的向量库参数: {unexpected}")
+        hits = self.search(embedding, max(k, fetch_k))
+        results = [
+            (self._document_with_score(self._documents[chunk_id], score), score)
+            for chunk_id, score in hits
+            if chunk_id in self._documents
+        ]
+        if filter_value is not None:
+            if callable(filter_value):
+                results = [
+                    (document, score)
+                    for document, score in results
+                    if filter_value(document.metadata)
+                ]
+            elif isinstance(filter_value, dict):
+                results = [
+                    (document, score)
+                    for document, score in results
+                    if all(
+                        document.metadata.get(key) == value
+                        for key, value in filter_value.items()
+                    )
+                ]
+            else:
+                raise TypeError("filter 必须是字典或可调用对象")
+        if score_threshold is not None:
+            results = [
+                (document, score)
+                for document, score in results
+                if score >= float(score_threshold)
+            ]
+        return results[:k]
+
+    @staticmethod
+    def _document_with_score(document: Document, score: float) -> Document:
+        metadata = dict(document.metadata)
+        metadata["score"] = float(score)
+        metadata["retrieval_score"] = float(score)
+        return Document(
+            id=document.id,
+            page_content=document.page_content,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _index_ids(index: faiss.IndexIDMap2) -> list[int]:
+        ids = faiss.vector_to_array(index.id_map).astype(np.int64, copy=False)
+        return [int(chunk_id) for chunk_id in ids.tolist()]
+
+    @staticmethod
+    def _document_for_chunk_id(chunk_id: int) -> Document:
+        return Document(
+            id=str(chunk_id),
+            page_content="",
+            metadata={"chunk_id": chunk_id},
+        )
+
+    @staticmethod
+    def _normalize_document(document: Document, chunk_id: int) -> Document:
+        metadata = dict(document.metadata)
+        metadata["chunk_id"] = chunk_id
+        return Document(
+            id=str(chunk_id),
+            page_content=document.page_content,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _document_chunk_id(
+        document: Document, explicit_id: str | None, fallback: int | None = None
+    ) -> int:
+        value: Any = explicit_id
+        if value is None:
+            value = document.metadata.get("chunk_id", document.id)
+        if value is None and fallback is not None:
+            value = fallback
+        try:
+            chunk_id = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("LangChain Document 必须包含正整数 chunk_id") from exc
+        if chunk_id <= 0:
+            raise ValueError("chunk_id 必须是正整数")
+        return chunk_id
+
+    def _build_langchain_store(
+        self,
+        index: faiss.IndexIDMap2,
+        documents: dict[int, Document],
+    ) -> LangChainFAISS:
+        document_store = InMemoryDocstore(
+            {str(chunk_id): document for chunk_id, document in documents.items()}
+        )
+        index_to_docstore_id = {
+            chunk_id: str(chunk_id) for chunk_id in self._index_ids(index)
+        }
+        embedding_function = (
+            self.embedding_service
+            if isinstance(self.embedding_service, Embeddings)
+            else _UnavailableEmbeddings()
+        )
+        return LangChainFAISS(
+            embedding_function=embedding_function,
+            index=index,
+            docstore=document_store,
+            index_to_docstore_id=index_to_docstore_id,
+            normalize_L2=False,
+            distance_strategy=DistanceStrategy.MAX_INNER_PRODUCT,
+        )
+
+    def _add_with_documents(
+        self,
+        chunks_with_vectors: Sequence[tuple[int, Sequence[float]]],
+        documents: Sequence[Document] | None = None,
+    ) -> None:
         if not chunks_with_vectors:
             return
         with self._lock:
             ids = [int(chunk_id) for chunk_id, _ in chunks_with_vectors]
             if any(chunk_id <= 0 for chunk_id in ids) or len(set(ids)) != len(ids):
                 raise ValueError("chunk ids must be unique positive integers")
+            if documents is not None and len(documents) != len(ids):
+                raise ValueError("文档数量与向量数量不一致")
             vectors = self._matrix([vector for _, vector in chunks_with_vectors])
             dimension = int(vectors.shape[1])
             if self._index is not None:
@@ -182,9 +485,20 @@ class VectorStoreService:
                 candidate = faiss.IndexIDMap2(faiss.IndexFlatIP(dimension))
 
             candidate.add_with_ids(vectors, np.asarray(ids, dtype=np.int64))
+            projected_documents = dict(self._documents)
+            for index, chunk_id in enumerate(ids):
+                projected_documents[chunk_id] = (
+                    self._normalize_document(documents[index], chunk_id)
+                    if documents is not None
+                    else self._document_for_chunk_id(chunk_id)
+                )
             meta = self._new_meta(metadata_signature)
             self._persist(candidate, meta)
             self._index = candidate
+            self._documents = projected_documents
+            self._langchain_store = self._build_langchain_store(
+                candidate, projected_documents
+            )
             self._meta = meta
 
     def remove(self, chunk_ids: Sequence[int]) -> None:
@@ -207,6 +521,14 @@ class VectorStoreService:
             meta = self._new_meta(self._signature_for(self._meta.embedding_dimension))
             self._persist(candidate, meta)
             self._index = candidate
+            self._documents = {
+                chunk_id: document
+                for chunk_id, document in self._documents.items()
+                if chunk_id not in selected
+            }
+            self._langchain_store = self._build_langchain_store(
+                candidate, self._documents
+            )
             self._meta = meta
 
     def search(
@@ -229,14 +551,48 @@ class VectorStoreService:
             count = min(top_k, self._index.ntotal)
             if count == 0:
                 return []
-            similarities, indices = self._index.search(vector, count)
+            if sys.platform == "darwin":
+                similarities, indices = self._search_without_openmp(
+                    self._index, vector, count
+                )
+                scored_ids = zip(indices[0], similarities[0], strict=True)
+            else:
+                if self._langchain_store is None:
+                    self._langchain_store = self._build_langchain_store(
+                        self._index, self._documents
+                    )
+                documents_with_scores = (
+                    self._langchain_store.similarity_search_with_score_by_vector(
+                        vector[0].tolist(), count
+                    )
+                )
+                scored_ids = (
+                    (
+                        int(document.metadata["chunk_id"]),
+                        score,
+                    )
+                    for document, score in documents_with_scores
+                )
             results: list[tuple[int, float]] = []
-            for chunk_id, cosine in zip(indices[0], similarities[0], strict=True):
+            for chunk_id, cosine in scored_ids:
                 if chunk_id < 0:
                     continue
                 retrieval_score = min(1.0, max(0.0, (float(cosine) + 1.0) / 2.0))
                 results.append((int(chunk_id), retrieval_score))
             return results
+
+    @staticmethod
+    def _search_without_openmp(
+        index: faiss.IndexIDMap2, query: np.ndarray, count: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Search small macOS indexes without crossing competing OpenMP runtimes."""
+        vectors = np.asarray(
+            index.index.reconstruct_n(0, index.ntotal), dtype=np.float32
+        )
+        ids = faiss.vector_to_array(index.id_map).astype(np.int64, copy=False)
+        scores = vectors @ query[0]
+        order = np.argsort(-scores, kind="stable")[:count]
+        return scores[order][None, :], ids[order][None, :]
 
     def save(self) -> None:
         with self._lock:
@@ -258,6 +614,8 @@ class VectorStoreService:
                     except OSError as exc:
                         raise VectorStorePersistenceError("清理旧向量索引失败") from exc
                 self._index = None
+                self._langchain_store = None
+                self._documents = {}
                 self._meta = None
                 return False
 
@@ -284,12 +642,19 @@ class VectorStoreService:
             meta = self._new_meta(selected_signature)
             self._persist(candidate, meta)
             self._index = candidate
+            self._documents = {
+                chunk_id: self._document_for_chunk_id(chunk_id) for chunk_id in ids
+            }
+            self._langchain_store = self._build_langchain_store(
+                candidate, self._documents
+            )
             self._meta = meta
             return True
 
     def _signature_for(self, dimension: int) -> EmbeddingSignature:
-        if self.embedding_service is not None:
-            return self.embedding_service.signature(dimension)
+        signature = getattr(self.embedding_service, "signature", None)
+        if signature is not None:
+            return signature(dimension)
         return EmbeddingSignature(
             embedding_provider=self.config.embedding_provider,
             embedding_model=self.config.embedding_model,
@@ -302,6 +667,7 @@ class VectorStoreService:
             **signature.model_dump(),
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
+            splitter_version=CURRENT_SPLITTER_VERSION,
             created_at=datetime.now(UTC),
         )
 
@@ -396,3 +762,7 @@ class VectorStoreService:
                     path.unlink(missing_ok=True)
                 except OSError:
                     logger.warning("Unable to remove temporary vector index file")
+
+
+class KnowledgeVectorStore(VectorStoreService):
+    """Named LangChain-facing alias for the persisted knowledge store."""

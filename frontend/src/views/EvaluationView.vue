@@ -327,6 +327,20 @@ async function loadRuns() {
   }
 }
 
+function syncRunSummary(detail: EvaluationRunDetail) {
+  const index = runs.value.findIndex((run) => run.id === detail.id)
+  if (index === -1) return
+
+  runs.value[index] = {
+    ...runs.value[index],
+    name: detail.name,
+    status: detail.status,
+    progress_current: detail.progress_current,
+    progress_total: detail.progress_total,
+    error_message: detail.error_message,
+  }
+}
+
 function stopPolling() {
   if (pollTimer !== undefined) {
     clearInterval(pollTimer)
@@ -351,6 +365,7 @@ async function loadRunDetail(id: number, showLoading = false) {
     const result = await getEvaluationRun(id)
     if (version !== selectedRunVersion || selectedRunId.value !== id) return
     runDetail.value = result
+    syncRunSummary(result)
     if (terminalStatus(result.status)) stopPolling()
     else startPolling(id)
   } catch (error) {

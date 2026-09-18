@@ -13,6 +13,7 @@ from app.core.database import initialize_database
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.main import app
+from app.rag.errors import ModelUnavailableError
 from app.schemas.contracts import (
     EvaluationCaseCreate,
     EvaluationCaseUpdate,
@@ -20,7 +21,7 @@ from app.schemas.contracts import (
 )
 from app.services.evaluation_cases import fixed_evaluation_cases
 from app.services.evaluation_service import EvaluationService
-from app.services.llm import ModelUnavailableError
+from tests.support import AsyncClientChatModel
 
 
 class FakeJudge:
@@ -47,7 +48,8 @@ class FakeChat:
     def __init__(
         self, *, fail_question: str | None = None, model_failure: bool = False
     ) -> None:
-        self.llm_client = FakeJudge()
+        self.judge = FakeJudge()
+        self.chat_model = AsyncClientChatModel(self.judge)
         self.fail_question = fail_question
         self.model_failure = model_failure
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
@@ -143,6 +145,19 @@ def test_run_executes_subset_calculates_metrics_and_does_not_write_chat_tables()
             EvaluationRunCreate(name="subset", case_ids=[1, 41], answer_style="legal")
         )
 
+        config_snapshot = service.get_run(run["id"])["config"]
+        assert config_snapshot["langchain_version"]
+        assert config_snapshot["chat_provider"] == "langchain_openai.ChatOpenAI"
+        assert config_snapshot["splitter_type"] == (
+            "app.rag.splitters.LegalTextSplitter"
+        )
+        assert config_snapshot["splitter_version"] == "legal-text-splitter-v1"
+        assert config_snapshot["vectorstore_type"] == (
+            "langchain_community.vectorstores.FAISS"
+        )
+        assert config_snapshot["retrieval_type"] == "similarity"
+        assert config_snapshot["rerank_model"] is None
+
         asyncio.run(service.execute_run(run["id"]))
 
         detail = service.get_run(run["id"])
@@ -162,7 +177,7 @@ def test_run_executes_subset_calculates_metrics_and_does_not_write_chat_tables()
             "multi_turn_pass_rate": None,
             "compliance_hit_rate": None,
         }
-        assert chat.llm_client.calls[0]["temperature"] == 0
+        assert chat.judge.calls[0]["temperature"] == 0
         with sqlite3.connect(database_path) as connection:
             assert connection.execute("SELECT COUNT(*) FROM session").fetchone()[0] == 0
             assert connection.execute("SELECT COUNT(*) FROM message").fetchone()[0] == 0
@@ -215,17 +230,24 @@ def test_delete_run_rejects_active_jobs_and_cascades_persisted_results() -> None
 
         assert service.repository.get_run(run["id"]) is None
         with sqlite3.connect(database_path) as connection:
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
-                (run["id"],),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
-                (run["id"],),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_case"
-            ).fetchone()[0] == 60
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
+                    (run["id"],),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
+                    (run["id"],),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute("SELECT COUNT(*) FROM evaluation_case").fetchone()[0]
+                == 60
+            )
 
 
 def test_item_error_is_saved_and_remaining_cases_continue() -> None:
@@ -288,7 +310,9 @@ def test_startup_recovery_marks_interrupted_run_failed() -> None:
         assert detail["error_message"] == "服务重启导致任务中断"
 
 
-def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> None:
+def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> (
+    None
+):
     with tempfile.TemporaryDirectory() as directory:
         database_path = Path(directory) / "eval.db"
         _create_database(database_path)
@@ -340,7 +364,10 @@ def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot()
         archived = service.archive_case(case["id"])
         assert archived["status"] == "ARCHIVED"
         assert service.repository.get_cases()[-1]["id"] == 60
-        assert service.repository.get_case(case["id"], include_archived=True)["status"] == "ARCHIVED"
+        assert (
+            service.repository.get_case(case["id"], include_archived=True)["status"]
+            == "ARCHIVED"
+        )
         assert snapshot["topic"] == "更新主题"
         assert snapshot["version"] == 2
 
@@ -379,7 +406,10 @@ def test_builtin_case_can_be_updated_and_run_scope_is_explicit() -> None:
             )
         )
         assert baseline["case_count"] == 60
-        assert service.repository.get_run(baseline["id"])["config"]["case_scope"] == "BUILTIN_BASELINE"
+        assert (
+            service.repository.get_run(baseline["id"])["config"]["case_scope"]
+            == "BUILTIN_BASELINE"
+        )
 
 
 def test_api_lists_seed_cases_and_returns_accepted_run() -> None:

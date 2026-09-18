@@ -218,6 +218,26 @@ class DocumentRepository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_chunks_by_ids(self, chunk_ids: Sequence[int]) -> dict[int, dict[str, Any]]:
+        """Load only the successful chunks requested by a retrieval query."""
+        normalized_ids = list(dict.fromkeys(int(chunk_id) for chunk_id in chunk_ids))
+        if not normalized_ids:
+            return {}
+
+        placeholders = ", ".join("?" for _ in normalized_ids)
+        with self._connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT c.*, d.file_name, d.file_type
+                FROM chunk AS c
+                JOIN document AS d ON d.id = c.document_id
+                WHERE d.status = 'SUCCESS' AND c.id IN ({placeholders})
+                ORDER BY c.id
+                """,
+                normalized_ids,
+            ).fetchall()
+            return {int(row["id"]): dict(row) for row in rows}
+
     def list_success_documents(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(
