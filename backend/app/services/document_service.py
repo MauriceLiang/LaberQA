@@ -167,7 +167,21 @@ class DocumentService:
                     (row["id"], vector)
                     for row, vector in zip(inserted_rows, vectors, strict=True)
                 ]
-                self.vector_store.add(vector_pairs)
+                vector_documents = [
+                    Document(
+                        id=str(row["id"]),
+                        page_content=chunk.page_content,
+                        metadata={
+                            "chunk_id": int(row["id"]),
+                            "document_id": document_id,
+                            "file_name": str(document["file_name"]),
+                            "file_type": str(document["file_type"]),
+                            "chunk_no": int(row["chunk_no"]),
+                        },
+                    )
+                    for row, chunk in zip(inserted_rows, chunks, strict=True)
+                ]
+                self.vector_store.add(vector_pairs, documents=vector_documents)
                 added_vector_ids = [row["id"] for row in inserted_rows]
 
                 updated = self.repository.update_document(

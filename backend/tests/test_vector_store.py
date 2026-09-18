@@ -2,6 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
 
 from app.core.config import Settings
 from app.rag.constants import CURRENT_SPLITTER_VERSION
@@ -13,6 +16,14 @@ from app.services.vector_store import (
     VectorStoreService,
     VectorStoreSignatureMismatch,
 )
+
+
+class FakeLangChainEmbeddings(Embeddings):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] if text == "劳动合同" else [0.0, 1.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [1.0, 0.0] if text == "合同" else [0.0, 1.0]
 
 
 def make_config(
@@ -259,3 +270,50 @@ def test_failed_metadata_replace_restores_previous_index(
     reloaded = VectorStoreService(make_config(), index_dir=index_dir)
     assert reloaded.load() is True
     assert reloaded.search([1.0, 0.0], 10) == [(1, 1.0)]
+
+
+def test_vector_store_implements_langchain_interface_and_preserves_documents(
+    tmp_path: Path,
+) -> None:
+    embedding = FakeLangChainEmbeddings()
+    store = VectorStoreService.from_texts(
+        ["劳动合同", "工资支付"],
+        embedding,
+        metadatas=[{"document_id": 8}, {"document_id": 9}],
+        ids=["101", "102"],
+        config=make_config(),
+        index_dir=tmp_path / "production",
+    )
+
+    assert isinstance(store, VectorStore)
+    documents = store.similarity_search("合同", k=2)
+    assert [document.id for document in documents] == ["101", "102"]
+    assert documents[0].metadata == {"document_id": 8, "chunk_id": 101}
+    assert store._langchain_store is not None
+    assert store._langchain_store.index_to_docstore_id == {101: "101", 102: "102"}
+    filtered = store.similarity_search(
+        "合同", k=2, filter={"document_id": 8}, score_threshold=0.9
+    )
+    assert [document.id for document in filtered] == ["101"]
+
+
+def test_add_documents_accepts_precomputed_vectors_and_stable_chunk_metadata(
+    tmp_path: Path,
+) -> None:
+    store = VectorStoreService(make_config(), index_dir=tmp_path / "production")
+    documents = [
+        Document(
+            id="201",
+            page_content="劳动关系",
+            metadata={"document_id": 10, "chunk_no": 1},
+        )
+    ]
+
+    assert store.add_documents(documents, vectors=[[1.0, 0.0]]) == ["201"]
+    result = store.similarity_search_by_vector([1.0, 0.0], k=1)
+    assert result[0].page_content == "劳动关系"
+    assert result[0].metadata == {
+        "document_id": 10,
+        "chunk_no": 1,
+        "chunk_id": 201,
+    }
