@@ -164,10 +164,6 @@ class DocumentService:
                         for chunk in chunks
                     ],
                 )
-                vector_pairs = [
-                    (row["id"], vector)
-                    for row, vector in zip(inserted_rows, vectors, strict=True)
-                ]
                 vector_documents = [
                     Document(
                         id=str(row["id"]),
@@ -182,8 +178,12 @@ class DocumentService:
                     )
                     for row, chunk in zip(inserted_rows, chunks, strict=True)
                 ]
-                self.vector_store.add(vector_pairs, documents=vector_documents)
-                added_vector_ids = [row["id"] for row in inserted_rows]
+                added_ids = self.vector_store.add_documents(
+                    vector_documents,
+                    vectors=vectors,
+                    ids=[str(row["id"]) for row in inserted_rows],
+                )
+                added_vector_ids = [int(chunk_id) for chunk_id in added_ids]
 
                 updated = self.repository.update_document(
                     document_id,

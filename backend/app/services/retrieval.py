@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -58,35 +57,28 @@ class DomainRetrievalService:
         self.candidate_retriever = self._build_candidate_retriever()
         self.retriever = self._build_domain_retriever()
 
-    def _build_candidate_retriever(self) -> Any | None:
-        as_retriever = getattr(self.vector_store, "as_retriever", None)
-        if not callable(as_retriever):
-            return None
-        return as_retriever(search_kwargs={"k": self.config.rag_top_k})
+    def _build_candidate_retriever(self) -> Runnable[Any, list[Document]]:
+        return self.vector_store.as_retriever(
+            search_kwargs={"k": self.config.rag_top_k}
+        )
 
-    def _build_domain_retriever(self) -> Runnable[Any, list[Document]] | None:
-        if self.candidate_retriever is None:
-            return None
+    def _build_domain_retriever(self) -> Runnable[Any, list[Document]]:
         return {
             "query": RunnablePassthrough(),
             "documents": self.candidate_retriever,
         } | RunnableLambda(self._documents_to_evidence_documents)
 
     def retrieve(self, query: str) -> list[dict[str, Any]]:
-        """Synchronously retrieve evidence for legacy service callers."""
+        """Synchronously retrieve evidence through the LangChain pipeline."""
         self._ensure_ready()
-        if self.retriever is not None:
-            documents = self.retriever.invoke(query)
-            return [_evidence_from_document(document) for document in documents]
-        return self._retrieve_with_legacy_vector_store(query)
+        documents = self.retriever.invoke(query)
+        return [_evidence_from_document(document) for document in documents]
 
     async def aretrieve(self, query: str) -> list[dict[str, Any]]:
         """Asynchronously invoke the LangChain retrieval pipeline."""
         self._ensure_ready()
-        if self.retriever is not None:
-            documents = await self.retriever.ainvoke(query)
-            return [_evidence_from_document(document) for document in documents]
-        return await asyncio.to_thread(self._retrieve_with_legacy_vector_store, query)
+        documents = await self.retriever.ainvoke(query)
+        return [_evidence_from_document(document) for document in documents]
 
     def _ensure_ready(self) -> None:
         status = self.vector_store.status
@@ -94,25 +86,6 @@ class DomainRetrievalService:
             raise VectorStoreNotInitialized("向量知识库尚未初始化")
         if status == "incompatible":
             raise VectorStoreSignatureMismatch("当前 Embedding 签名与生产索引不一致")
-
-    def _retrieve_with_legacy_vector_store(self, query: str) -> list[dict[str, Any]]:
-        # Compatibility path for injected vector stores that predate the
-        # LangChain ``as_retriever`` interface. Production uses ``retriever``;
-        # remove this path after downstream custom stores have migrated.
-        query_vector = self.embedding_service.embed_query(query)
-        hits = list(self.vector_store.search(query_vector, self.config.rag_top_k))
-        chunks_by_id = self._chunks_by_ids(chunk_id for chunk_id, _ in hits)
-        evidence: list[dict[str, Any]] = []
-        seen: set[int] = set()
-        for chunk_id, score in hits:
-            if chunk_id in seen:
-                continue
-            seen.add(chunk_id)
-            chunk = chunks_by_id.get(chunk_id)
-            if chunk is None:
-                continue
-            evidence.append(_evidence_item(chunk, score, len(evidence) + 1))
-        return self._apply_rerank(query, evidence)
 
     def _documents_to_evidence_documents(
         self, state: Mapping[str, Any]
@@ -149,16 +122,7 @@ class DomainRetrievalService:
         if not normalized_ids:
             return {}
 
-        get_chunks_by_ids = getattr(self.repository, "get_chunks_by_ids", None)
-        if callable(get_chunks_by_ids):
-            return get_chunks_by_ids(normalized_ids)
-
-        # Compatibility fallback for injected repositories from older clients.
-        return {
-            int(chunk["id"]): chunk
-            for chunk in self.repository.list_success_chunks()
-            if int(chunk["id"]) in normalized_ids
-        }
+        return self.repository.get_chunks_by_ids(normalized_ids)
 
     def _apply_rerank(
         self, query: str, evidence: list[dict[str, Any]]

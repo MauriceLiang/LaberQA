@@ -173,7 +173,9 @@ class DocumentApiTests(unittest.TestCase):
         with TestClient(app) as client:
             service = self._service()
             app.state.document_service = service
-            with patch.object(service.vector_store, "add", side_effect=OSError):
+            with patch.object(
+                service.vector_store, "add_documents", side_effect=OSError
+            ):
                 response = client.post(
                     "/api/documents/upload",
                     files={"file": ("law.txt", b"legal text", "text/plain")},

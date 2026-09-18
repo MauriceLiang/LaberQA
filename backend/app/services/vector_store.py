@@ -191,7 +191,7 @@ class VectorStoreService(VectorStore):
         *,
         documents: Sequence[Document] | None = None,
     ) -> None:
-        """Add precomputed vectors while keeping the legacy service API."""
+        """Compatibility API; production ingestion uses ``add_documents``."""
         self._add_with_documents(chunks_with_vectors, documents)
 
     def add_documents(self, documents: list[Document], **kwargs: Any) -> list[str]:

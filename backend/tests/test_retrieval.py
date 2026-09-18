@@ -2,7 +2,8 @@ import asyncio
 from typing import Any
 
 import pytest
-from langchain_core.runnables import Runnable
+from langchain_core.documents import Document
+from langchain_core.runnables import Runnable, RunnableLambda
 
 from app.core.config import Settings
 from app.services.rerank import RerankService
@@ -19,6 +20,9 @@ class FakeEmbedding:
 class UnreadyVectorStore:
     status = "not_initialized"
 
+    def as_retriever(self, **_: Any) -> Runnable[Any, list[Document]]:
+        return RunnableLambda(lambda _query: [])
+
 
 class FailingEmbedding:
     def embed_query(self, query: str) -> list[float]:
@@ -31,6 +35,33 @@ class FakeVectorStore:
     def __init__(self) -> None:
         self.query_vector: list[float] | None = None
         self.top_k: int | None = None
+        self.embedding_service: FakeEmbedding | None = None
+
+    def as_retriever(
+        self, *, search_kwargs: dict[str, Any]
+    ) -> Runnable[Any, list[Document]]:
+        self.top_k = int(search_kwargs["k"])
+        return RunnableLambda(self._retrieve)
+
+    def _retrieve(self, query: str) -> list[Document]:
+        if self.embedding_service is None:
+            raise AssertionError("embedding service should be injected")
+        hits = self.search(
+            self.embedding_service.embed_query(query),
+            self.top_k or 0,
+        )
+        return [
+            Document(
+                id=str(chunk_id),
+                page_content="",
+                metadata={
+                    "chunk_id": chunk_id,
+                    "score": score,
+                    "retrieval_score": score,
+                },
+            )
+            for chunk_id, score in hits
+        ]
 
     def search(self, query_vector: list[float], top_k: int) -> list[tuple[int, float]]:
         self.query_vector = query_vector
