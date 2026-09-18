@@ -30,6 +30,7 @@ EXPECTED_OPERATIONS = {
     ("post", "/api/evaluations/runs"),
     ("get", "/api/evaluations/runs"),
     ("get", "/api/evaluations/runs/{id}"),
+    ("delete", "/api/evaluations/runs/{id}"),
     ("get", "/api/missing-knowledge"),
     ("patch", "/api/missing-knowledge/{id}"),
     ("get", "/api/retrieval-experiments"),
@@ -77,6 +78,7 @@ class Phase1ContractTests(unittest.TestCase):
             ("/api/evaluations/runs", "post"),
             ("/api/evaluations/runs", "get"),
             ("/api/evaluations/runs/{id}", "get"),
+            ("/api/evaluations/runs/{id}", "delete"),
         ):
             self.assertNotIn("501", schema["paths"][path][method]["responses"])
         for path, method in (

@@ -4,11 +4,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_evaluation_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
+from app.core.error_codes import ErrorCode
+from app.core.errors import AppError
 from app.main import app
 from app.schemas.contracts import EvaluationRunCreate
 from app.services.evaluation_cases import fixed_evaluation_cases
@@ -189,6 +192,37 @@ def test_multiturn_replays_prior_user_and_assistant_messages_in_memory() -> None
         assert service.get_run(run["id"])["metrics"]["multi_turn_pass_rate"] == 1.0
 
 
+def test_delete_run_rejects_active_jobs_and_cascades_persisted_results() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+        run = service.create_run(
+            EvaluationRunCreate(name="delete", case_ids=[1], answer_style="plain")
+        )
+
+        with pytest.raises(AppError) as error:
+            service.delete_run(run["id"])
+        assert error.value.code == ErrorCode.INVALID_EVALUATION_RUN_STATE
+
+        asyncio.run(service.execute_run(run["id"]))
+        service.delete_run(run["id"])
+
+        assert service.repository.get_run(run["id"]) is None
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
+                (run["id"],),
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
+                (run["id"],),
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_case"
+            ).fetchone()[0] == 60
+
+
 def test_item_error_is_saved_and_remaining_cases_continue() -> None:
     with tempfile.TemporaryDirectory() as directory:
         database_path = Path(directory) / "eval.db"
@@ -303,6 +337,26 @@ def test_api_lists_seed_cases_and_returns_accepted_run() -> None:
                 assert runs_response.json()["data"]["total"] == 1
                 assert client.get(f"/api/evaluations/runs/{run_id}").status_code == 200
                 assert client.get("/api/evaluations/runs/999").status_code == 404
+
+                delete_response = client.delete(f"/api/evaluations/runs/{run_id}")
+                assert delete_response.status_code == 200
+                assert delete_response.json() == {
+                    "code": 0,
+                    "message": "deleted",
+                    "data": None,
+                }
+                assert client.get(f"/api/evaluations/runs/{run_id}").status_code == 404
+
+                active_run = service.create_run(
+                    EvaluationRunCreate(
+                        name="active", case_ids=[1], answer_style="plain"
+                    )
+                )
+                active_delete = client.delete(
+                    f"/api/evaluations/runs/{active_run['id']}"
+                )
+                assert active_delete.status_code == 409
+                assert active_delete.json()["code"] == 40903
         finally:
             app.dependency_overrides.clear()
             app.dependency_overrides.update(original_overrides)

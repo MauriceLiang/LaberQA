@@ -452,6 +452,21 @@ def get_evaluation_run(
     )
 
 
+@router.delete(
+    "/evaluations/runs/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Delete a completed or failed evaluation run",
+)
+def delete_evaluation_run(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[None]:
+    service.delete_run(id)
+    return ApiResponse(code=0, message="deleted", data=None)
+
+
 @router.get(
     "/missing-knowledge",
     response_model=ApiResponse[PageResult[MissingKnowledgeItem]],

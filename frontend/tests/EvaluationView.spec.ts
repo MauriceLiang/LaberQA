@@ -1,5 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { ElInput, ElSelect } from 'element-plus'
+import { ElInput, ElMessageBox, ElSelect } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as evaluationsApi from '@/api/evaluations'
@@ -8,6 +8,7 @@ import EvaluationView from '@/views/EvaluationView.vue'
 
 vi.mock('@/api/evaluations', () => ({
   createEvaluationRun: vi.fn(),
+  deleteEvaluationRun: vi.fn(),
   getEvaluationCases: vi.fn(),
   getEvaluationRun: vi.fn(),
   getEvaluationRuns: vi.fn(),
@@ -106,9 +107,13 @@ beforeEach(() => {
   vi.mocked(evaluationsApi.createEvaluationRun).mockResolvedValue({
     run_id: 8, status: 'PENDING', progress_current: 0, progress_total: 1, error_message: null,
   })
+  vi.mocked(evaluationsApi.deleteEvaluationRun).mockResolvedValue()
 })
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('EvaluationView', () => {
   it('loads filtered, paginated cases with the API contract values', async () => {
@@ -168,7 +173,17 @@ describe('EvaluationView', () => {
 
     const wrapper = shallowMount(EvaluationView)
     await flushPromises()
+    expect(evaluationsApi.getEvaluationRun).not.toHaveBeenCalled()
+    expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(false)
+    expect(wrapper.get('.evaluation-link').attributes('aria-expanded')).toBe('false')
+    expect(vi.getTimerCount()).toBe(0)
+
+    await wrapper.get('.evaluation-link').trigger('click')
+    await flushPromises()
+
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(true)
+    expect(wrapper.get('.evaluation-link').attributes('aria-expanded')).toBe('true')
     expect(vi.getTimerCount()).toBe(1)
 
     await vi.advanceTimersByTimeAsync(1999)
@@ -180,6 +195,7 @@ describe('EvaluationView', () => {
     expect(wrapper.text()).toContain('回答正确率')
     expect(wrapper.text()).toContain('90.0%')
     expect(wrapper.text()).toContain('多轮通过率')
+    expect(wrapper.text()).not.toContain('此批次没有可计算的指标。')
     expect(wrapper.text()).toContain('用例 #3')
     expect(wrapper.text()).toContain('工资支付规定.txt')
     const answer = wrapper.findComponent(MarkdownContent)
@@ -189,6 +205,10 @@ describe('EvaluationView', () => {
 
     await vi.advanceTimersByTimeAsync(4000)
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(2)
+
+    await wrapper.get('.evaluation-link').trigger('click')
+    expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(false)
+    expect(wrapper.get('.evaluation-link').attributes('aria-expanded')).toBe('false')
     wrapper.unmount()
   })
 
@@ -208,12 +228,50 @@ describe('EvaluationView', () => {
 
     const wrapper = shallowMount(EvaluationView)
     await flushPromises()
+    await wrapper.get('.evaluation-link').trigger('click')
+    await flushPromises()
 
     expect(wrapper.get('.evaluation-metrics').text()).toContain('85.0%')
     expect(wrapper.get('.evaluation-metrics').text()).toContain('65.0%')
     expect(wrapper.get('.evaluation-metrics').text()).toContain('不适用')
     expect(wrapper.get('.evaluation-metric-note').text()).toContain('没有包含该指标所需的用例')
     expect(wrapper.text()).not.toContain('—')
+    wrapper.unmount()
+  })
+
+  it('requires confirmation and refreshes the list after deleting a completed run', async () => {
+    vi.mocked(evaluationsApi.getEvaluationRuns)
+      .mockResolvedValueOnce({
+        items: [runSummary('COMPLETED')], page: 1, size: 10, total: 1, pages: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [], page: 1, size: 10, total: 0, pages: 0,
+      })
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce(new Error('cancel'))
+    const wrapper = shallowMount(EvaluationView)
+    await flushPromises()
+
+    await wrapper.get('.evaluation-run-delete').trigger('click')
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledWith(
+      '将同时删除该批次的逐题结果、指标和用例关联，删除后不可恢复。',
+      '确定删除评测批次“回归评测”吗？',
+      expect.objectContaining({ confirmButtonText: '删除', cancelButtonText: '取消' }),
+    )
+    expect(evaluationsApi.deleteEvaluationRun).not.toHaveBeenCalled()
+
+    vi.mocked(evaluationsApi.getEvaluationRun).mockResolvedValueOnce(runDetail('COMPLETED'))
+    await wrapper.get('.evaluation-link').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(true)
+
+    confirm.mockResolvedValueOnce(undefined as never)
+    await wrapper.get('.evaluation-run-delete').trigger('click')
+    await flushPromises()
+
+    expect(evaluationsApi.deleteEvaluationRun).toHaveBeenCalledWith(8)
+    expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无评测批次')
     wrapper.unmount()
   })
 })

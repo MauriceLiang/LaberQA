@@ -114,6 +114,21 @@ class EvaluationService:
             )
         return run
 
+    def delete_run(self, run_id: int) -> None:
+        run = self.repository.delete_run(run_id)
+        if run is None:
+            raise AppError(
+                ErrorCode.EVALUATION_RUN_NOT_FOUND,
+                "评测批次不存在",
+                http_status=404,
+            )
+        if run["status"] not in {"COMPLETED", "FAILED"}:
+            raise AppError(
+                ErrorCode.INVALID_EVALUATION_RUN_STATE,
+                "排队中或运行中的评测批次不能删除",
+                http_status=409,
+            )
+
     async def execute_run(self, run_id: int) -> None:
         try:
             self.repository.set_run_status(run_id, "RUNNING")

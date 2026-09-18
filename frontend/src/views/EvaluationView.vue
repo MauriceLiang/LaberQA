@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { ElButton, ElInput, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { ArrowRight, Search } from '@element-plus/icons-vue'
 
 import {
   createEvaluationRun,
+  deleteEvaluationRun,
   getEvaluationCases,
   getEvaluationRun,
   getEvaluationRuns,
@@ -38,6 +39,7 @@ const runSize = 10
 const runTotal = ref(0)
 const runPages = ref(0)
 const loadingRuns = ref(false)
+const deletingRunId = ref<number>()
 const runsError = ref('')
 const runName = ref('')
 const answerStyle = ref<EvaluationAnswerStyle>('plain')
@@ -47,7 +49,7 @@ const selectedRunId = ref<number>()
 const runDetail = ref<EvaluationRunDetail>()
 const loadingDetail = ref(false)
 const detailError = ref('')
-const detailRequestIds = new Set<number>()
+const detailRequestVersions = new Map<number, number>()
 let selectedRunVersion = 0
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
@@ -132,10 +134,6 @@ async function loadRuns() {
     runs.value = result.items
     runTotal.value = result.total
     runPages.value = result.pages
-    if (selectedRunId.value === undefined && result.items.length) {
-      const latest = result.items.find((item) => !terminalStatus(item.status)) ?? result.items[0]
-      selectRun(latest)
-    }
   } catch (error) {
     runsError.value = getErrorMessage(error)
   } finally {
@@ -153,14 +151,14 @@ function stopPolling() {
 function startPolling(id: number) {
   if (pollTimer !== undefined) return
   pollTimer = setInterval(() => {
-    if (!detailRequestIds.has(id) && selectedRunId.value === id) void loadRunDetail(id)
+    if (!detailRequestVersions.has(id) && selectedRunId.value === id) void loadRunDetail(id)
   }, 2000)
 }
 
 async function loadRunDetail(id: number, showLoading = false) {
-  if (detailRequestIds.has(id)) return
   const version = selectedRunVersion
-  detailRequestIds.add(id)
+  if (detailRequestVersions.get(id) === version) return
+  detailRequestVersions.set(id, version)
   if (showLoading) loadingDetail.value = true
   detailError.value = ''
   try {
@@ -172,21 +170,66 @@ async function loadRunDetail(id: number, showLoading = false) {
   } catch (error) {
     if (version === selectedRunVersion && selectedRunId.value === id) detailError.value = getErrorMessage(error)
   } finally {
-    detailRequestIds.delete(id)
+    if (detailRequestVersions.get(id) === version) detailRequestVersions.delete(id)
     if (version === selectedRunVersion && selectedRunId.value === id && showLoading) {
       loadingDetail.value = false
     }
   }
 }
 
-function selectRun(run: EvaluationRunSummary) {
+function toggleRun(run: EvaluationRunSummary) {
   stopPolling()
   selectedRunVersion += 1
+  if (selectedRunId.value === run.id) {
+    selectedRunId.value = undefined
+    runDetail.value = undefined
+    loadingDetail.value = false
+    detailError.value = ''
+    return
+  }
   selectedRunId.value = run.id
   runDetail.value = undefined
   detailError.value = ''
   if (!terminalStatus(run.status)) startPolling(run.id)
   void loadRunDetail(run.id, true)
+}
+
+async function deleteRun(run: EvaluationRunSummary) {
+  if (!terminalStatus(run.status) || deletingRunId.value !== undefined) return
+  try {
+    await ElMessageBox.confirm(
+      '将同时删除该批次的逐题结果、指标和用例关联，删除后不可恢复。',
+      `确定删除评测批次“${run.name}”吗？`,
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        closeOnClickModal: false,
+      },
+    )
+  } catch {
+    return
+  }
+
+  deletingRunId.value = run.id
+  runsError.value = ''
+  try {
+    await deleteEvaluationRun(run.id)
+    if (selectedRunId.value === run.id) {
+      stopPolling()
+      selectedRunVersion += 1
+      selectedRunId.value = undefined
+      runDetail.value = undefined
+      loadingDetail.value = false
+      detailError.value = ''
+    }
+    if (runs.value.length === 1 && runPage.value > 1) runPage.value -= 1
+    await loadRuns()
+  } catch (error) {
+    runsError.value = `删除评测批次失败：${getErrorMessage(error)}`
+  } finally {
+    deletingRunId.value = undefined
+  }
 }
 
 async function createRun() {
@@ -420,7 +463,7 @@ onBeforeUnmount(() => {
       <div class="evaluation-section-heading">
         <div>
           <h2 id="evaluation-runs-title">评测批次</h2>
-          <p>选择批次查看进度；运行中的任务每 2 秒更新一次。</p>
+          <p>点击批次展开详情，再次点击收起；展开的运行中任务每 2 秒更新一次。</p>
         </div>
       </div>
       <p v-if="runsError" class="evaluation-error" role="alert">{{ runsError }}</p>
@@ -429,11 +472,12 @@ onBeforeUnmount(() => {
         <table class="evaluation-table evaluation-run-table">
           <thead>
             <tr>
-              <th scope="col" class="evaluation-select-cell"><span class="sr-only">选择</span></th>
+              <th scope="col" class="evaluation-select-cell"><span class="sr-only">展开状态</span></th>
               <th scope="col">批次</th>
               <th scope="col">状态</th>
               <th scope="col">进度</th>
               <th scope="col">创建时间</th>
+              <th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -441,19 +485,32 @@ onBeforeUnmount(() => {
               v-for="run in runs"
               :key="run.id"
               :class="{ 'evaluation-run-selected': run.id === selectedRunId }"
-              @click="selectRun(run)"
+              @click="toggleRun(run)"
             >
               <td class="evaluation-select-cell">
-                <input
-                  :aria-label="`选择评测批次 ${run.name}`"
-                  type="radio"
-                  name="evaluation-run"
-                  :checked="run.id === selectedRunId"
-                  @click.stop
-                  @change="selectRun(run)"
-                />
+                <ElButton
+                  class="evaluation-run-toggle"
+                  text
+                  circle
+                  :aria-label="`${run.id === selectedRunId ? '收起' : '展开'}评测批次 ${run.name}`"
+                  :aria-expanded="run.id === selectedRunId"
+                  aria-controls="evaluation-run-detail"
+                  @click.stop="toggleRun(run)"
+                >
+                  <ArrowRight aria-hidden="true" />
+                </ElButton>
               </td>
-              <td><button class="evaluation-link" type="button" @click.stop="selectRun(run)">{{ run.name }}</button></td>
+              <td>
+                <button
+                  class="evaluation-link"
+                  type="button"
+                  :aria-expanded="run.id === selectedRunId"
+                  aria-controls="evaluation-run-detail"
+                  @click.stop="toggleRun(run)"
+                >
+                  {{ run.name }}
+                </button>
+              </td>
               <td>
                 <span class="evaluation-status-inline" :class="statusClass(run.status)">
                   <i aria-hidden="true" />{{ formatStatus(run.status) }}
@@ -461,9 +518,23 @@ onBeforeUnmount(() => {
               </td>
               <td>{{ run.progress_current }} / {{ run.progress_total }}</td>
               <td>{{ formatCreatedAt(run.created_at) }}</td>
+              <td>
+                <ElButton
+                  class="evaluation-run-delete"
+                  type="danger"
+                  text
+                  :loading="deletingRunId === run.id"
+                  :disabled="!terminalStatus(run.status) || deletingRunId !== undefined"
+                  :title="terminalStatus(run.status) ? '删除评测批次' : '排队中或运行中的批次不能删除'"
+                  :aria-label="`删除评测批次 ${run.name}`"
+                  @click.stop="deleteRun(run)"
+                >
+                  删除
+                </ElButton>
+              </td>
             </tr>
             <tr v-if="!loadingRuns && runs.length === 0">
-              <td colspan="5" class="evaluation-empty">暂无评测批次</td>
+              <td colspan="6" class="evaluation-empty">暂无评测批次</td>
             </tr>
           </tbody>
         </table>
@@ -475,7 +546,12 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="selectedRunId !== undefined" class="evaluation-panel evaluation-detail-panel" aria-labelledby="evaluation-detail-title">
+    <section
+      v-if="selectedRunId !== undefined"
+      id="evaluation-run-detail"
+      class="evaluation-panel evaluation-detail-panel"
+      aria-labelledby="evaluation-detail-title"
+    >
       <div class="evaluation-section-heading evaluation-detail-heading">
         <div>
           <h2 id="evaluation-detail-title">批次运行结果</h2>
@@ -507,10 +583,10 @@ onBeforeUnmount(() => {
           <div><span>多轮通过率</span><strong>{{ formatRate(runDetail.metrics.multi_turn_pass_rate) }}</strong></div>
           <div><span>合规提示命中率</span><strong>{{ formatRate(runDetail.metrics.compliance_hit_rate) }}</strong></div>
         </div>
+        <div v-else-if="terminalStatus(runDetail.status)" class="evaluation-muted">此批次没有可计算的指标。</div>
         <p v-if="hasUnavailableMetrics" class="evaluation-metric-note">
           “不适用”表示本批次没有包含该指标所需的用例；运行全部 60 条可生成完整指标。
         </p>
-        <div v-else-if="terminalStatus(runDetail.status)" class="evaluation-muted">此批次没有可计算的指标。</div>
 
         <div class="evaluation-results">
           <h3>逐题结果（{{ runDetail.results.length }}）</h3>
@@ -957,13 +1033,15 @@ onBeforeUnmount(() => {
 .evaluation-run-table th:nth-child(1),
 .evaluation-run-table td:nth-child(1) { width: 42px; }
 .evaluation-run-table th:nth-child(2),
-.evaluation-run-table td:nth-child(2) { width: 42%; }
+.evaluation-run-table td:nth-child(2) { width: 36%; }
 .evaluation-run-table th:nth-child(3),
-.evaluation-run-table td:nth-child(3) { width: 18%; }
+.evaluation-run-table td:nth-child(3) { width: 16%; }
 .evaluation-run-table th:nth-child(4),
-.evaluation-run-table td:nth-child(4) { width: 18%; }
+.evaluation-run-table td:nth-child(4) { width: 16%; }
 .evaluation-run-table th:nth-child(5),
-.evaluation-run-table td:nth-child(5) { width: 22%; }
+.evaluation-run-table td:nth-child(5) { width: 20%; }
+.evaluation-run-table th:nth-child(6),
+.evaluation-run-table td:nth-child(6) { width: 78px; }
 
 .evaluation-run-table tbody tr {
   cursor: pointer;
@@ -972,6 +1050,29 @@ onBeforeUnmount(() => {
 .evaluation-run-table tbody tr:hover,
 .evaluation-run-table tbody tr.evaluation-run-selected {
   background: #f0f7f4;
+}
+
+.evaluation-run-toggle.el-button {
+  width: 26px;
+  height: 26px;
+  color: #536077;
+}
+
+.evaluation-run-toggle.el-button:hover {
+  color: #185b44;
+  background: #e4f0eb;
+}
+
+.evaluation-run-toggle :deep(svg) {
+  transition: transform 160ms ease;
+}
+
+.evaluation-run-toggle[aria-expanded='true'] :deep(svg) {
+  transform: rotate(90deg);
+}
+
+.evaluation-run-delete.el-button {
+  padding: 5px 8px;
 }
 
 .evaluation-link {

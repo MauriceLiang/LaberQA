@@ -141,6 +141,19 @@ class EvaluationRepository:
                 ).fetchone()
             )
 
+    def delete_run(self, run_id: int) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM evaluation_run WHERE id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            run = dict(row)
+            if run["status"] not in {"COMPLETED", "FAILED"}:
+                return run
+            connection.execute("DELETE FROM evaluation_run WHERE id = ?", (run_id,))
+            return run
+
     def run_case_ids(self, run_id: int) -> list[int]:
         with self._connection() as connection:
             rows = connection.execute(

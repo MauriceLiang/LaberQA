@@ -58,3 +58,7 @@ export async function getEvaluationRun(id: number): Promise<EvaluationRunDetail>
   const response = await http.get<EvaluationRunDetail>(`/evaluations/runs/${id}`)
   return response.data
 }
+
+export async function deleteEvaluationRun(id: number): Promise<void> {
+  await http.delete(`/evaluations/runs/${id}`)
+}
