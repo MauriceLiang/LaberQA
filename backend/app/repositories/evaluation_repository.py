@@ -18,19 +18,22 @@ class EvaluationRepository:
 
     def seed_cases(self, cases: Sequence[dict[str, Any]]) -> None:
         with self._connection() as connection:
-            count = connection.execute(
-                "SELECT COUNT(*) FROM evaluation_case"
-            ).fetchone()[0]
-            if count:
-                return
-            connection.executemany(
-                """
-                INSERT INTO evaluation_case (
-                    topic, expected_type, turns_json, expected_points_json,
-                    expected_sources_json, should_show_compliance
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                [
+            for position, case in enumerate(cases, start=1):
+                builtin_key = f"baseline-{position}"
+                exists = connection.execute(
+                    "SELECT 1 FROM evaluation_case WHERE builtin_key = ?",
+                    (builtin_key,),
+                ).fetchone()
+                if exists:
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO evaluation_case (
+                        topic, expected_type, turns_json, expected_points_json,
+                        expected_sources_json, should_show_compliance, origin,
+                        status, version, builtin_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'BUILTIN', 'ACTIVE', 1, ?)
+                    """,
                     (
                         case["topic"],
                         case["expected_type"],
@@ -38,10 +41,9 @@ class EvaluationRepository:
                         json.dumps(case["expected_points"], ensure_ascii=False),
                         json.dumps(case["expected_sources"], ensure_ascii=False),
                         int(case["should_show_compliance"]),
-                    )
-                    for case in cases
-                ],
-            )
+                        builtin_key,
+                    ),
+                )
 
     def list_cases(
         self,
@@ -51,6 +53,9 @@ class EvaluationRepository:
         topic: str | None,
         expected_type: str | None,
         is_multi_turn: bool | None,
+        origin: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         conditions: list[str] = []
         parameters: list[Any] = []
@@ -69,6 +74,14 @@ class EvaluationRepository:
                 if is_multi_turn
                 else "json_array_length(turns_json) = 1"
             )
+        if origin:
+            conditions.append("origin = ?")
+            parameters.append(origin)
+        if status:
+            conditions.append("status = ?")
+            parameters.append(status)
+        elif not include_archived:
+            conditions.append("status = 'ACTIVE'")
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self._connection() as connection:
@@ -88,11 +101,17 @@ class EvaluationRepository:
             ).fetchall()
             return [self._case_item(row) for row in rows], total
 
-    def get_cases(self, case_ids: Sequence[int] | None = None) -> list[dict[str, Any]]:
+    def get_cases(
+        self,
+        case_ids: Sequence[int] | None = None,
+        *,
+        include_archived: bool = False,
+    ) -> list[dict[str, Any]]:
         with self._connection() as connection:
+            status_clause = "" if include_archived else " AND status = 'ACTIVE'"
             if case_ids is None:
                 rows = connection.execute(
-                    "SELECT * FROM evaluation_case ORDER BY id"
+                    f"SELECT * FROM evaluation_case WHERE 1 = 1{status_clause} ORDER BY id"
                 ).fetchall()
             elif not case_ids:
                 return []
@@ -101,19 +120,100 @@ class EvaluationRepository:
                 found = {
                     int(row["id"]): row
                     for row in connection.execute(
-                        f"SELECT * FROM evaluation_case WHERE id IN ({placeholders})",
+                        f"SELECT * FROM evaluation_case WHERE id IN ({placeholders}){status_clause}",
                         list(case_ids),
                     ).fetchall()
                 }
                 rows = [found[case_id] for case_id in case_ids if case_id in found]
             return [self._case_item(row) for row in rows]
 
+    def get_case(
+        self, case_id: int, *, include_archived: bool = False
+    ) -> dict[str, Any] | None:
+        cases = self.get_cases([case_id], include_archived=include_archived)
+        return cases[0] if cases else None
+
+    def create_case(self, case: dict[str, Any]) -> dict[str, Any]:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO evaluation_case (
+                    topic, expected_type, turns_json, expected_points_json,
+                    expected_sources_json, should_show_compliance, origin,
+                    status, version
+                ) VALUES (?, ?, ?, ?, ?, ?, 'CUSTOM', 'ACTIVE', 1)
+                """,
+                _case_values(case),
+            )
+            row = connection.execute(
+                "SELECT * FROM evaluation_case WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return self._case_item(row)
+
+    def update_case(
+        self, case_id: int, expected_version: int, case: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE evaluation_case
+                SET topic = ?, expected_type = ?, turns_json = ?,
+                    expected_points_json = ?, expected_sources_json = ?,
+                    should_show_compliance = ?, version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'ACTIVE' AND version = ?
+                """,
+                (*_case_values(case), case_id, expected_version),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM evaluation_case WHERE id = ?", (case_id,)
+            ).fetchone()
+            return self._case_item(row)
+
+    def archive_case(self, case_id: int) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE evaluation_case
+                SET status = 'ARCHIVED', archived_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND origin = 'CUSTOM' AND status = 'ACTIVE'
+                """,
+                (case_id,),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM evaluation_case WHERE id = ?", (case_id,)
+            ).fetchone()
+            return self._case_item(row)
+
+    def has_active_run(self, case_id: int) -> bool:
+        with self._connection() as connection:
+            return (
+                connection.execute(
+                    """
+                    SELECT 1
+                    FROM evaluation_run_case
+                    JOIN evaluation_run ON evaluation_run.id = evaluation_run_case.run_id
+                    WHERE evaluation_run_case.case_id = ?
+                      AND evaluation_run.status IN ('PENDING', 'RUNNING')
+                    LIMIT 1
+                    """,
+                    (case_id,),
+                ).fetchone()
+                is not None
+            )
+
     def create_run(
         self,
         name: str,
-        case_ids: Sequence[int],
+        cases: Sequence[dict[str, Any]],
         config: dict[str, Any],
     ) -> dict[str, Any]:
+        case_ids = [int(case["id"]) for case in cases]
         with self._connection() as connection:
             cursor = connection.execute(
                 """
@@ -129,10 +229,22 @@ class EvaluationRepository:
             )
             run_id = int(cursor.lastrowid)
             connection.executemany(
-                "INSERT INTO evaluation_run_case (run_id, case_id, position) VALUES (?, ?, ?)",
+                """
+                INSERT INTO evaluation_run_case (
+                    run_id, case_id, position, case_version, case_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
                 [
-                    (run_id, case_id, position)
-                    for position, case_id in enumerate(case_ids)
+                    (
+                        run_id,
+                        case_id,
+                        position,
+                        int(case.get("version", 1)),
+                        json.dumps(_case_snapshot(case), ensure_ascii=False),
+                    )
+                    for position, (case_id, case) in enumerate(
+                        zip(case_ids, cases, strict=True)
+                    )
                 ],
             )
             return dict(
@@ -161,6 +273,33 @@ class EvaluationRepository:
                 (run_id,),
             ).fetchall()
             return [int(row["case_id"]) for row in rows]
+
+    def run_cases(self, run_id: int) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT case_id, case_version, case_snapshot_json
+                FROM evaluation_run_case
+                WHERE run_id = ? ORDER BY position
+                """,
+                (run_id,),
+            ).fetchall()
+            cases: list[dict[str, Any]] = []
+            for row in rows:
+                snapshot = json.loads(row["case_snapshot_json"] or "{}")
+                if not snapshot:
+                    current = self.get_case(int(row["case_id"]), include_archived=True)
+                    if current is None:
+                        continue
+                    snapshot = _case_snapshot(current)
+                cases.append(
+                    {
+                        "id": int(row["case_id"]),
+                        "version": int(row["case_version"] or 1),
+                        **snapshot,
+                    }
+                )
+            return cases
 
     def set_run_status(self, run_id: int, status: str) -> None:
         with self._connection() as connection:
@@ -308,6 +447,16 @@ class EvaluationRepository:
             "expected_points": json.loads(row["expected_points_json"]),
             "expected_sources": json.loads(row["expected_sources_json"]),
             "should_show_compliance": bool(row["should_show_compliance"]),
+            "origin": row["origin"] if "origin" in row.keys() else "BUILTIN",
+            "status": row["status"] if "status" in row.keys() else "ACTIVE",
+            "version": int(row["version"] if "version" in row.keys() else 1),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"]
+            if "updated_at" in row.keys() and row["updated_at"]
+            else row["created_at"],
+            "archived_at": row["archived_at"]
+            if "archived_at" in row.keys()
+            else None,
         }
 
     @staticmethod
@@ -357,3 +506,25 @@ def _db_bool(value: bool | None) -> int | None:
 
 def _python_bool(value: int | None) -> bool | None:
     return None if value is None else bool(value)
+
+
+def _case_values(case: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        case["topic"],
+        case["expected_type"],
+        json.dumps(case["turns"], ensure_ascii=False),
+        json.dumps(case["expected_points"], ensure_ascii=False),
+        json.dumps(case["expected_sources"], ensure_ascii=False),
+        int(case["should_show_compliance"]),
+    )
+
+
+def _case_snapshot(case: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "topic": case["topic"],
+        "expected_type": case["expected_type"],
+        "turns": case["turns"],
+        "expected_points": case["expected_points"],
+        "expected_sources": case["expected_sources"],
+        "should_show_compliance": bool(case["should_show_compliance"]),
+    }

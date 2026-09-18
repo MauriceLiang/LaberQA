@@ -30,7 +30,9 @@ from app.schemas.contracts import (
     DocumentReimportAccepted,
     DocumentUploadAccepted,
     EvaluationCase,
+    EvaluationCaseCreate,
     EvaluationCaseQuery,
+    EvaluationCaseUpdate,
     EvaluationRunCreate,
     EvaluationRunDetail,
     EvaluationRunJob,
@@ -361,6 +363,9 @@ def list_evaluation_cases(
         topic=query.topic,
         expected_type=query.expected_type.value if query.expected_type else None,
         is_multi_turn=query.is_multi_turn,
+        origin=query.origin.value if query.origin else None,
+        status=query.status.value if query.status else None,
+        include_archived=query.include_archived,
     )
     return ApiResponse(
         code=0,
@@ -373,6 +378,79 @@ def list_evaluation_cases(
             pages=(total + query.size - 1) // query.size,
         ),
     )
+
+
+@router.post(
+    "/evaluations/cases",
+    response_model=ApiResponse[EvaluationCase],
+    status_code=201,
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Create a custom evaluation case",
+)
+def create_evaluation_case(
+    payload: EvaluationCaseCreate,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="created",
+        data=EvaluationCase.model_validate(service.create_case(payload)),
+    )
+
+
+@router.get(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[EvaluationCase],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Get an evaluation case",
+)
+def get_evaluation_case(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=EvaluationCase.model_validate(
+            service.get_case(id, include_archived=True)
+        ),
+    )
+
+
+@router.patch(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[EvaluationCase],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Update a custom evaluation case",
+)
+def update_evaluation_case(
+    id: int,
+    payload: EvaluationCaseUpdate,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="updated",
+        data=EvaluationCase.model_validate(service.update_case(id, payload)),
+    )
+
+
+@router.delete(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Archive a custom evaluation case",
+)
+def delete_evaluation_case(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[None]:
+    service.archive_case(id)
+    return ApiResponse(code=0, message="deleted", data=None)
 
 
 @router.post(

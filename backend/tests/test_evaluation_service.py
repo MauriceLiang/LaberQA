@@ -13,7 +13,11 @@ from app.core.database import initialize_database
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.main import app
-from app.schemas.contracts import EvaluationRunCreate
+from app.schemas.contracts import (
+    EvaluationCaseCreate,
+    EvaluationCaseUpdate,
+    EvaluationRunCreate,
+)
 from app.services.evaluation_cases import fixed_evaluation_cases
 from app.services.evaluation_service import EvaluationService
 from app.services.llm import ModelUnavailableError
@@ -281,6 +285,99 @@ def test_startup_recovery_marks_interrupted_run_failed() -> None:
         detail = service.get_run(run["id"])
         assert detail["status"] == "FAILED"
         assert detail["error_message"] == "服务重启导致任务中断"
+
+
+def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+        case = service.create_case(
+            EvaluationCaseCreate(
+                topic="自定义主题",
+                expected_type="ANSWER",
+                turns=["原问题"],
+                expected_points=["原要点"],
+                expected_sources=[],
+                should_show_compliance=False,
+            )
+        )
+
+        updated = service.update_case(
+            case["id"],
+            EvaluationCaseUpdate(
+                version=1,
+                topic="更新主题",
+                expected_type="ANSWER",
+                turns=["新问题"],
+                expected_points=["新要点"],
+                expected_sources=[],
+                should_show_compliance=True,
+            ),
+        )
+        assert updated["version"] == 2
+        run = service.create_run(
+            EvaluationRunCreate(
+                name="snapshot",
+                case_ids=[case["id"]],
+                answer_style="plain",
+            )
+        )
+        snapshot = service.repository.run_cases(run["id"])[0]
+        service.repository.complete_run(
+            run["id"],
+            {
+                "accuracy": None,
+                "reject_rate": None,
+                "citation_hit_rate": None,
+                "multi_turn_pass_rate": None,
+                "compliance_hit_rate": None,
+            },
+        )
+
+        archived = service.archive_case(case["id"])
+        assert archived["status"] == "ARCHIVED"
+        assert service.repository.get_cases()[-1]["id"] == 60
+        assert service.repository.get_case(case["id"], include_archived=True)["status"] == "ARCHIVED"
+        assert snapshot["topic"] == "更新主题"
+        assert snapshot["version"] == 2
+
+
+def test_builtin_case_can_be_updated_and_run_scope_is_explicit() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+
+        updated = service.update_case(
+            1,
+            EvaluationCaseUpdate(
+                version=1,
+                topic="已修改的内置用例",
+                expected_type="ANSWER",
+                turns=["问题"],
+                expected_points=["要点"],
+                expected_sources=[],
+                should_show_compliance=False,
+            ),
+        )
+        assert updated["origin"] == "BUILTIN"
+        assert updated["version"] == 2
+
+        with pytest.raises(AppError) as error:
+            service.archive_case(1)
+        assert error.value.code == ErrorCode.BUILTIN_CASE_READ_ONLY
+
+        baseline = service.create_run(
+            EvaluationRunCreate(
+                name="baseline",
+                case_ids=None,
+                answer_style="plain",
+                case_scope="BUILTIN_BASELINE",
+            )
+        )
+        assert baseline["case_count"] == 60
+        assert service.repository.get_run(baseline["id"])["config"]["case_scope"] == "BUILTIN_BASELINE"
 
 
 def test_api_lists_seed_cases_and_returns_accepted_run() -> None:

@@ -27,6 +27,10 @@ EXPECTED_OPERATIONS = {
     ("post", "/api/chat/stream"),
     ("post", "/api/tools/material-checklist"),
     ("get", "/api/evaluations/cases"),
+    ("post", "/api/evaluations/cases"),
+    ("get", "/api/evaluations/cases/{id}"),
+    ("patch", "/api/evaluations/cases/{id}"),
+    ("delete", "/api/evaluations/cases/{id}"),
     ("post", "/api/evaluations/runs"),
     ("get", "/api/evaluations/runs"),
     ("get", "/api/evaluations/runs/{id}"),
@@ -75,6 +79,10 @@ class Phase1ContractTests(unittest.TestCase):
             self.assertNotIn("501", schema["paths"][path][method]["responses"])
         for path, method in (
             ("/api/evaluations/cases", "get"),
+            ("/api/evaluations/cases", "post"),
+            ("/api/evaluations/cases/{id}", "get"),
+            ("/api/evaluations/cases/{id}", "patch"),
+            ("/api/evaluations/cases/{id}", "delete"),
             ("/api/evaluations/runs", "post"),
             ("/api/evaluations/runs", "get"),
             ("/api/evaluations/runs/{id}", "get"),
@@ -209,6 +217,12 @@ class Phase1ContractTests(unittest.TestCase):
             expected_points=["保留工资支付证据"],
             expected_sources=[{"file_name": "劳动合同法.pdf", "chunk_no": None}],
             should_show_compliance=True,
+            origin="BUILTIN",
+            status="ACTIVE",
+            version=1,
+            created_at="2026-09-15T00:00:00Z",
+            updated_at="2026-09-15T00:00:00Z",
+            archived_at=None,
         )
         self.assertEqual(case.model_dump(mode="json")["turns"], ["欠薪怎么办？"])
         self.assertNotIn("expected_answer", case.model_dump_json())

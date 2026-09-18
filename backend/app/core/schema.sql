@@ -67,7 +67,16 @@ CREATE TABLE IF NOT EXISTS evaluation_case (
     expected_points_json TEXT NOT NULL DEFAULT '[]',
     expected_sources_json TEXT NOT NULL DEFAULT '[]',
     should_show_compliance INTEGER NOT NULL DEFAULT 0 CHECK (should_show_compliance IN (0, 1)),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    origin VARCHAR(20) NOT NULL DEFAULT 'BUILTIN'
+        CHECK (origin IN ('BUILTIN', 'CUSTOM')),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('ACTIVE', 'ARCHIVED')),
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    builtin_key VARCHAR(100),
+    created_by VARCHAR(100),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS evaluation_run (
@@ -111,6 +120,8 @@ CREATE TABLE IF NOT EXISTS evaluation_run_case (
     run_id INTEGER NOT NULL REFERENCES evaluation_run(id) ON DELETE CASCADE,
     case_id INTEGER NOT NULL REFERENCES evaluation_case(id),
     position INTEGER NOT NULL CHECK (position >= 0),
+    case_version INTEGER NOT NULL DEFAULT 1 CHECK (case_version >= 1),
+    case_snapshot_json TEXT NOT NULL DEFAULT '{}',
     PRIMARY KEY (run_id, case_id),
     UNIQUE (run_id, position)
 );

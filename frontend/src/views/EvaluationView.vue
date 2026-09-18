@@ -1,16 +1,32 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElButton, ElInput, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import {
+  ElButton,
+  ElDialog,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+} from 'element-plus'
 import { ArrowRight, Search } from '@element-plus/icons-vue'
 
 import {
+  createEvaluationCase,
   createEvaluationRun,
+  deleteEvaluationCase,
   deleteEvaluationRun,
   getEvaluationCases,
   getEvaluationRun,
   getEvaluationRuns,
+  updateEvaluationCase,
   type EvaluationAnswerStyle,
   type EvaluationCase,
+  type EvaluationCaseInput,
+  type EvaluationCaseOrigin,
+  type EvaluationCaseScope,
+  type EvaluationCaseStatus,
   type EvaluationExpectedType,
   type EvaluationJobStatus,
   type EvaluationRunDetail,
@@ -28,10 +44,31 @@ const topicInput = ref('')
 const topicFilter = ref('')
 const expectedTypeFilter = ref<EvaluationExpectedType | ''>('')
 const multiTurnFilter = ref<'' | 'true' | 'false'>('')
+const caseOriginFilter = ref<EvaluationCaseOrigin | ''>('')
+const caseStatusFilter = ref<EvaluationCaseStatus | ''>('')
 const selectedCaseIds = ref(new Set<number>())
 const loadingCases = ref(false)
 const casesError = ref('')
 let caseRequestId = 0
+
+type CaseForm = EvaluationCaseInput
+
+const emptyCaseForm = (): CaseForm => ({
+  topic: '',
+  expected_type: 'ANSWER',
+  turns: [''],
+  expected_points: [''],
+  expected_sources: [],
+  should_show_compliance: false,
+})
+
+const caseDialogVisible = ref(false)
+const editingCase = ref<EvaluationCase>()
+const caseForm = ref<CaseForm>(emptyCaseForm())
+const caseFormError = ref('')
+const savingCase = ref(false)
+const deletingCaseId = ref<number>()
+const caseScope = ref<EvaluationCaseScope>('BUILTIN_BASELINE')
 
 const runs = ref<EvaluationRunSummary[]>([])
 const runPage = ref(1)
@@ -54,9 +91,20 @@ let selectedRunVersion = 0
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 const selectedPageFully = computed(
-  () => cases.value.length > 0 && cases.value.every((item) => selectedCaseIds.value.has(item.id)),
+  () => {
+    const activeCases = cases.value.filter((item) => item.status === 'ACTIVE')
+    return activeCases.length > 0 && activeCases.every((item) => selectedCaseIds.value.has(item.id))
+  },
 )
 const selectedRunSummary = computed(() => runs.value.find((run) => run.id === selectedRunId.value))
+const allActiveCaseLabel = computed(() => {
+  const isUnfilteredActiveList = !topicFilter.value
+    && !expectedTypeFilter.value
+    && !multiTurnFilter.value
+    && !caseOriginFilter.value
+    && !caseStatusFilter.value
+  return isUnfilteredActiveList ? `全部活动用例（${caseTotal.value} 条）` : '全部活动用例'
+})
 const displayedRunName = computed(
   () => runDetail.value?.name ?? selectedRunSummary.value?.name ?? `评测批次 #${selectedRunId.value ?? ''}`,
 )
@@ -83,6 +131,9 @@ async function loadCases() {
       topic: topicFilter.value || undefined,
       expected_type: expectedTypeFilter.value || undefined,
       is_multi_turn: multiTurnFilter.value === '' ? undefined : multiTurnFilter.value === 'true',
+      origin: caseOriginFilter.value || undefined,
+      status: caseStatusFilter.value || undefined,
+      include_archived: caseStatusFilter.value === 'ARCHIVED',
     })
     if (requestId !== caseRequestId) return
     cases.value = result.items
@@ -99,6 +150,140 @@ function applyCaseFilters() {
   topicFilter.value = topicInput.value.trim()
   casePage.value = 1
   void loadCases()
+}
+
+function openCreateCase() {
+  editingCase.value = undefined
+  caseForm.value = emptyCaseForm()
+  caseFormError.value = ''
+  caseDialogVisible.value = true
+}
+
+function openEditCase(item: EvaluationCase) {
+  if (item.status !== 'ACTIVE') return
+  editingCase.value = item
+  caseForm.value = {
+    topic: item.topic,
+    expected_type: item.expected_type,
+    turns: [...item.turns],
+    expected_points: [...item.expected_points],
+    expected_sources: item.expected_sources.map((source) => ({ ...source })),
+    should_show_compliance: item.should_show_compliance,
+  }
+  caseFormError.value = ''
+  caseDialogVisible.value = true
+}
+
+function addCaseTurn() {
+  if (caseForm.value.turns.length < 10) caseForm.value.turns.push('')
+}
+
+function removeCaseTurn(index: number) {
+  if (caseForm.value.turns.length <= 1) return
+  caseForm.value.turns.splice(index, 1)
+}
+
+function addExpectedPoint() {
+  if (caseForm.value.expected_points.length < 20) caseForm.value.expected_points.push('')
+}
+
+function removeExpectedPoint(index: number) {
+  caseForm.value.expected_points.splice(index, 1)
+}
+
+function addExpectedSource() {
+  if (caseForm.value.expected_sources.length < 20) {
+    caseForm.value.expected_sources.push({ file_name: '', chunk_no: null })
+  }
+}
+
+function removeExpectedSource(index: number) {
+  caseForm.value.expected_sources.splice(index, 1)
+}
+
+function validateCaseForm(): string | undefined {
+  caseForm.value.topic = caseForm.value.topic.trim()
+  if (!caseForm.value.topic) return '请填写用例主题'
+  const turns = caseForm.value.turns.map((turn) => turn.trim())
+  if (turns.some((turn) => !turn)) return '每轮问题都不能为空'
+  caseForm.value.turns = turns
+  const points = caseForm.value.expected_points.map((point) => point.trim()).filter(Boolean)
+  if (caseForm.value.expected_type === 'ANSWER' && points.length === 0) {
+    return '应回答用例至少需要一个预期要点'
+  }
+  caseForm.value.expected_points = points
+  const sources = caseForm.value.expected_sources.map((source) => ({
+    file_name: source.file_name.trim(),
+    chunk_no: source.chunk_no === null || source.chunk_no === undefined || Number.isNaN(Number(source.chunk_no))
+      ? null
+      : Number(source.chunk_no),
+  }))
+  if (sources.some((source) => !source.file_name || (source.chunk_no !== null && source.chunk_no < 1))) {
+    return '引用来源需要填写文件名，分块号必须为正整数'
+  }
+  caseForm.value.expected_sources = sources
+  return undefined
+}
+
+async function saveCase() {
+  const validationError = validateCaseForm()
+  if (validationError) {
+    caseFormError.value = validationError
+    return
+  }
+  savingCase.value = true
+  caseFormError.value = ''
+  try {
+    if (editingCase.value) {
+      await updateEvaluationCase(editingCase.value.id, {
+        ...caseForm.value,
+        version: editingCase.value.version,
+      })
+      ElMessage.success('评测用例已更新')
+    } else {
+      await createEvaluationCase(caseForm.value)
+      ElMessage.success('评测用例已创建')
+    }
+    caseDialogVisible.value = false
+    await loadCases()
+  } catch (error) {
+    caseFormError.value = getErrorMessage(error)
+  } finally {
+    savingCase.value = false
+  }
+}
+
+async function archiveCase(item: EvaluationCase) {
+  if (item.origin === 'BUILTIN' || item.status !== 'ACTIVE' || deletingCaseId.value !== undefined) return
+  try {
+    await ElMessageBox.confirm(
+      '删除后，该用例将从新的评测选择列表中移除；已有评测批次和结果不会被删除。',
+      `确定删除评测用例“${item.topic}”吗？`,
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        closeOnClickModal: false,
+      },
+    )
+  } catch {
+    return
+  }
+  deletingCaseId.value = item.id
+  casesError.value = ''
+  try {
+    await deleteEvaluationCase(item.id)
+    const next = new Set(selectedCaseIds.value)
+    next.delete(item.id)
+    selectedCaseIds.value = next
+    ElMessage.success('评测用例已删除')
+    if (cases.value.length === 1 && casePage.value > 1) casePage.value -= 1
+    await loadCases()
+  } catch (error) {
+    casesError.value = `删除评测用例失败：${getErrorMessage(error)}`
+  } finally {
+    deletingCaseId.value = undefined
+  }
 }
 
 function changeCasePage(nextPage: number) {
@@ -121,8 +306,9 @@ function toggleCase(id: number, checked: boolean) {
 
 function toggleCurrentPage() {
   const next = new Set(selectedCaseIds.value)
-  if (selectedPageFully.value) cases.value.forEach((item) => next.delete(item.id))
-  else cases.value.forEach((item) => next.add(item.id))
+  const activeCases = cases.value.filter((item) => item.status === 'ACTIVE')
+  if (selectedPageFully.value) activeCases.forEach((item) => next.delete(item.id))
+  else activeCases.forEach((item) => next.add(item.id))
   selectedCaseIds.value = next
 }
 
@@ -238,14 +424,21 @@ async function createRun() {
     createError.value = '请填写评测批次名称'
     return
   }
+  if (caseScope.value === 'SELECTED' && selectedCaseIds.value.size === 0) {
+    createError.value = '选择“已选用例”时，至少勾选一条用例'
+    return
+  }
 
   creatingRun.value = true
   createError.value = ''
   try {
     const job = await createEvaluationRun({
       name,
-      case_ids: selectedCaseIds.value.size ? [...selectedCaseIds.value].sort((a, b) => a - b) : null,
+      case_ids: caseScope.value === 'SELECTED'
+        ? [...selectedCaseIds.value].sort((a, b) => a - b)
+        : null,
       answer_style: answerStyle.value,
+      case_scope: caseScope.value,
     })
     stopPolling()
     selectedRunVersion += 1
@@ -336,8 +529,9 @@ onBeforeUnmount(() => {
       <div class="evaluation-section-heading">
         <div>
           <h2 id="evaluation-cases-title">评测用例</h2>
-          <p>不选择用例时，将执行全部 60 条</p>
+          <p>内置基线和自定义用例均可编辑；自定义用例可删除</p>
         </div>
+        <ElButton type="primary" class="evaluation-primary" @click="openCreateCase">新建用例</ElButton>
       </div>
       <p v-if="casesError" class="evaluation-error" role="alert">{{ casesError }}</p>
       <form class="evaluation-filters" @submit.prevent="applyCaseFilters">
@@ -367,6 +561,20 @@ onBeforeUnmount(() => {
             <ElOption label="多轮" value="true" />
           </ElSelect>
         </label>
+        <label class="evaluation-filter-control">
+          <span class="sr-only">用例来源</span>
+          <ElSelect v-model="caseOriginFilter" class="evaluation-filter-select" aria-label="用例来源" placeholder="用例来源">
+            <ElOption label="内置基线" value="BUILTIN" />
+            <ElOption label="自定义" value="CUSTOM" />
+          </ElSelect>
+        </label>
+        <label class="evaluation-filter-control">
+          <span class="sr-only">用例状态</span>
+          <ElSelect v-model="caseStatusFilter" class="evaluation-filter-select" aria-label="用例状态" placeholder="活动用例">
+            <ElOption label="活动用例" value="ACTIVE" />
+            <ElOption label="已归档" value="ARCHIVED" />
+          </ElSelect>
+        </label>
         <ElButton type="primary" native-type="submit" class="evaluation-primary">筛选</ElButton>
       </form>
 
@@ -375,7 +583,7 @@ onBeforeUnmount(() => {
           <thead>
             <tr>
               <th scope="col" class="evaluation-select-cell">
-                <input aria-label="选择本页全部用例" type="checkbox" :checked="selectedPageFully" @change="toggleCurrentPage" />
+                <input aria-label="选择本页全部用例" type="checkbox" :disabled="!cases.some((item) => item.status === 'ACTIVE')" :checked="selectedPageFully" @change="toggleCurrentPage" />
               </th>
               <th scope="col">ID</th>
               <th scope="col">主题</th>
@@ -384,12 +592,14 @@ onBeforeUnmount(() => {
               <th scope="col">预期</th>
               <th scope="col">多轮</th>
               <th scope="col">合规提示</th>
+              <th scope="col">来源</th>
+              <th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in cases" :key="item.id">
               <td class="evaluation-select-cell">
-                <input :aria-label="`选择用例 ${item.id}`" type="checkbox" :checked="selectedCaseIds.has(item.id)" @change="toggleCase(item.id, ($event.target as HTMLInputElement).checked)" />
+                <input :aria-label="`选择用例 ${item.id}`" type="checkbox" :disabled="item.status !== 'ACTIVE'" :checked="selectedCaseIds.has(item.id)" @change="toggleCase(item.id, ($event.target as HTMLInputElement).checked)" />
               </td>
               <td class="evaluation-case-id">{{ formatCaseId(item.id) }}</td>
               <td class="evaluation-case-topic">{{ item.topic }}</td>
@@ -398,9 +608,17 @@ onBeforeUnmount(() => {
               <td>{{ item.expected_type === 'ANSWER' ? '应回答' : '应拒答' }}</td>
               <td>{{ item.turns.length > 1 ? '是' : '否' }}</td>
               <td>{{ item.should_show_compliance ? '需要' : '不需要' }}</td>
+              <td>{{ item.origin === 'BUILTIN' ? '内置基线' : '自定义' }}</td>
+              <td class="evaluation-case-actions">
+                <template v-if="item.status === 'ACTIVE'">
+                  <ElButton text size="small" @click.stop="openEditCase(item)">编辑</ElButton>
+                  <ElButton v-if="item.origin === 'CUSTOM'" text type="danger" size="small" :loading="deletingCaseId === item.id" @click.stop="archiveCase(item)">删除</ElButton>
+                </template>
+                <span v-else class="evaluation-muted">已归档</span>
+              </td>
             </tr>
             <tr v-if="!loadingCases && cases.length === 0">
-              <td colspan="8" class="evaluation-empty">暂无符合条件的用例</td>
+              <td colspan="10" class="evaluation-empty">暂无符合条件的用例</td>
             </tr>
           </tbody>
         </table>
@@ -425,12 +643,77 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <ElDialog
+      v-model="caseDialogVisible"
+      :title="editingCase ? '编辑评测用例' : '新建评测用例'"
+      width="min(720px, calc(100vw - 32px))"
+      destroy-on-close
+    >
+      <form class="evaluation-case-form" @submit.prevent="saveCase">
+        <label>
+          <span>主题</span>
+          <ElInput v-model="caseForm.topic" maxlength="50" show-word-limit placeholder="例如：劳动合同签订期限" />
+        </label>
+        <label>
+          <span>预期类型</span>
+          <ElSelect v-model="caseForm.expected_type" placeholder="选择预期类型">
+            <ElOption label="应回答" value="ANSWER" />
+            <ElOption label="应拒答" value="REJECT" />
+          </ElSelect>
+        </label>
+
+        <div class="evaluation-form-array">
+          <div class="evaluation-form-array-heading">
+            <span>问题轮次</span>
+            <ElButton text type="primary" :disabled="caseForm.turns.length >= 10" @click="addCaseTurn">新增轮次</ElButton>
+          </div>
+          <div v-for="(turn, index) in caseForm.turns" :key="`turn-${index}`" class="evaluation-form-array-row">
+            <ElInput v-model="caseForm.turns[index]" type="textarea" :rows="2" maxlength="2000" show-word-limit :placeholder="`第 ${index + 1} 轮问题`" />
+            <ElButton text type="danger" :disabled="caseForm.turns.length <= 1" @click="removeCaseTurn(index)">删除</ElButton>
+          </div>
+        </div>
+
+        <div class="evaluation-form-array">
+          <div class="evaluation-form-array-heading">
+            <span>预期要点</span>
+            <ElButton text type="primary" :disabled="caseForm.expected_points.length >= 20" @click="addExpectedPoint">新增要点</ElButton>
+          </div>
+          <div v-for="(point, index) in caseForm.expected_points" :key="`point-${index}`" class="evaluation-form-array-row">
+            <ElInput v-model="caseForm.expected_points[index]" maxlength="500" placeholder="回答应包含的关键点" />
+            <ElButton text type="danger" @click="removeExpectedPoint(index)">删除</ElButton>
+          </div>
+        </div>
+
+        <div class="evaluation-form-array">
+          <div class="evaluation-form-array-heading">
+            <span>预期引用来源（可选）</span>
+            <ElButton text type="primary" :disabled="caseForm.expected_sources.length >= 20" @click="addExpectedSource">新增来源</ElButton>
+          </div>
+          <div v-for="(source, index) in caseForm.expected_sources" :key="`source-${index}`" class="evaluation-form-array-row evaluation-source-row">
+            <ElInput v-model="source.file_name" placeholder="文件名" />
+            <ElInput v-model="source.chunk_no" type="number" min="1" placeholder="分块号（可选）" />
+            <ElButton text type="danger" @click="removeExpectedSource(index)">删除</ElButton>
+          </div>
+        </div>
+
+        <label class="evaluation-switch-row">
+          <span>需要合规提示</span>
+          <ElSwitch v-model="caseForm.should_show_compliance" />
+        </label>
+        <p v-if="caseFormError" class="evaluation-error" role="alert">{{ caseFormError }}</p>
+        <div class="evaluation-dialog-actions">
+          <ElButton native-type="button" @click="caseDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" native-type="submit" :loading="savingCase">保存</ElButton>
+        </div>
+      </form>
+    </ElDialog>
+
     <section class="evaluation-panel evaluation-create-panel" aria-labelledby="evaluation-create-title">
       <div class="evaluation-create-layout">
         <div class="evaluation-section-heading">
           <div>
             <h2 id="evaluation-create-title">创建评测批次</h2>
-            <p>不选用例将运行全部 60 条；仅运行部分用例时，缺少对应类型的指标不适用</p>
+            <p>选择执行范围后创建后台评测批次；历史批次保留执行时的用例版本</p>
           </div>
         </div>
         <form class="evaluation-create-form" @submit.prevent="createRun">
@@ -449,6 +732,14 @@ onBeforeUnmount(() => {
             <ElSelect v-model="answerStyle" class="evaluation-create-select" aria-label="回答风格">
               <ElOption label="通俗版" value="plain" />
               <ElOption label="严谨版" value="legal" />
+            </ElSelect>
+          </label>
+          <label>
+            <span>执行范围</span>
+            <ElSelect v-model="caseScope" class="evaluation-create-select" aria-label="执行范围">
+              <ElOption label="官方基线（60 条）" value="BUILTIN_BASELINE" />
+              <ElOption :label="allActiveCaseLabel" value="ALL_ACTIVE" />
+              <ElOption :label="`已选用例（${selectedCaseIds.size} 条）`" value="SELECTED" />
             </ElSelect>
           </label>
           <ElButton class="evaluation-primary" type="primary" native-type="submit" :loading="creatingRun" :disabled="creatingRun">
@@ -585,7 +876,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="terminalStatus(runDetail.status)" class="evaluation-muted">此批次没有可计算的指标。</div>
         <p v-if="hasUnavailableMetrics" class="evaluation-metric-note">
-          “不适用”表示本批次没有包含该指标所需的用例；运行全部 60 条可生成完整指标。
+          “不适用”表示本批次没有包含该指标所需的用例；同时包含对应类型的用例才会生成完整指标。
         </p>
 
         <div class="evaluation-results">
@@ -689,8 +980,8 @@ onBeforeUnmount(() => {
 
 .evaluation-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 180px 180px 90px;
-  gap: 10px;
+  grid-template-columns: minmax(210px, 1.5fr) repeat(4, minmax(120px, 1fr)) 90px;
+  gap: 8px;
 }
 
 .evaluation-filter-control {
@@ -855,6 +1146,10 @@ onBeforeUnmount(() => {
 .evaluation-case-table td:nth-child(7) { width: 62px; }
 .evaluation-case-table th:nth-child(8),
 .evaluation-case-table td:nth-child(8) { width: 82px; }
+.evaluation-case-table th:nth-child(9),
+.evaluation-case-table td:nth-child(9) { width: 82px; }
+.evaluation-case-table th:nth-child(10),
+.evaluation-case-table td:nth-child(10) { width: 125px; }
 
 .evaluation-select-cell {
   text-align: center;
@@ -882,6 +1177,14 @@ onBeforeUnmount(() => {
 .evaluation-case-question {
   color: #354257;
   overflow-wrap: anywhere;
+}
+
+.evaluation-case-actions {
+  white-space: nowrap;
+}
+
+.evaluation-case-actions .el-button {
+  padding: 4px 5px;
 }
 
 .evaluation-empty {
@@ -965,7 +1268,7 @@ onBeforeUnmount(() => {
 
 .evaluation-create-form {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(150px, 180px) 126px;
+  grid-template-columns: minmax(170px, 1fr) minmax(140px, 170px) minmax(180px, 210px) 126px;
   align-items: center;
   gap: 10px;
 }
@@ -1020,6 +1323,61 @@ onBeforeUnmount(() => {
 .evaluation-create-select :deep(.el-select__selected-item) {
   color: #354257;
   font: inherit;
+}
+
+.evaluation-case-form {
+  display: grid;
+  gap: 14px;
+}
+
+.evaluation-case-form > label,
+.evaluation-switch-row {
+  display: grid;
+  gap: 6px;
+  color: #536077;
+  font-size: 13px;
+}
+
+.evaluation-case-form > label > span,
+.evaluation-switch-row > span {
+  font-weight: 650;
+}
+
+.evaluation-case-form .el-select,
+.evaluation-case-form .el-input {
+  width: 100%;
+}
+
+.evaluation-form-array {
+  display: grid;
+  gap: 8px;
+}
+
+.evaluation-form-array-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #536077;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.evaluation-form-array-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.evaluation-source-row {
+  grid-template-columns: minmax(0, 1fr) 140px auto;
+}
+
+.evaluation-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .evaluation-create-input :deep(.el-input__inner::placeholder) {
@@ -1294,7 +1652,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 820px) {
   .evaluation-filters {
-    grid-template-columns: minmax(220px, 1fr) 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .evaluation-filters .evaluation-primary {
@@ -1309,7 +1667,12 @@ onBeforeUnmount(() => {
   }
 
   .evaluation-create-form {
-    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) 112px;
+    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr);
+  }
+
+  .evaluation-create-form .evaluation-primary {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 }
 
@@ -1373,6 +1736,19 @@ onBeforeUnmount(() => {
 
   .evaluation-results {
     margin-top: 15px;
+  }
+
+  .evaluation-form-array-row,
+  .evaluation-source-row {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-dialog-actions {
+    justify-content: stretch;
+  }
+
+  .evaluation-dialog-actions .el-button {
+    flex: 1;
   }
 }
 </style>

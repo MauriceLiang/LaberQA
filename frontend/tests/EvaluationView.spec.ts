@@ -7,11 +7,15 @@ import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 import EvaluationView from '@/views/EvaluationView.vue'
 
 vi.mock('@/api/evaluations', () => ({
+  createEvaluationCase: vi.fn(),
   createEvaluationRun: vi.fn(),
+  deleteEvaluationCase: vi.fn(),
   deleteEvaluationRun: vi.fn(),
   getEvaluationCases: vi.fn(),
+  getEvaluationCase: vi.fn(),
   getEvaluationRun: vi.fn(),
   getEvaluationRuns: vi.fn(),
+  updateEvaluationCase: vi.fn(),
 }))
 
 const evaluationCase: evaluationsApi.EvaluationCase = {
@@ -22,6 +26,12 @@ const evaluationCase: evaluationsApi.EvaluationCase = {
   expected_points: ['申请劳动仲裁'],
   expected_sources: [],
   should_show_compliance: true,
+  origin: 'CUSTOM',
+  status: 'ACTIVE',
+  version: 1,
+  created_at: '2026-09-15T00:00:00Z',
+  updated_at: '2026-09-15T00:00:00Z',
+  archived_at: null,
 }
 
 function casePage(items = [evaluationCase], page = 1, pages = 1) {
@@ -50,6 +60,7 @@ function runDetail(
     ...runSummary(status),
     config: {
       answer_style: 'plain',
+      case_scope: 'BUILTIN_BASELINE',
       llm_model: 'test-model',
       evaluator_model: 'test-model',
       evaluator_prompt_version: 'evaluation_judge_v1',
@@ -100,6 +111,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useRealTimers()
   vi.mocked(evaluationsApi.getEvaluationCases).mockResolvedValue(casePage())
+  vi.mocked(evaluationsApi.createEvaluationCase).mockResolvedValue(evaluationCase)
+  vi.mocked(evaluationsApi.updateEvaluationCase).mockResolvedValue(evaluationCase)
+  vi.mocked(evaluationsApi.deleteEvaluationCase).mockResolvedValue()
   vi.mocked(evaluationsApi.getEvaluationRuns).mockResolvedValue({
     items: [], page: 1, size: 10, total: 0, pages: 0,
   })
@@ -122,6 +136,7 @@ describe('EvaluationView', () => {
 
     expect(evaluationsApi.getEvaluationCases).toHaveBeenCalledWith({
       page: 1, size: 20, topic: undefined, expected_type: undefined, is_multi_turn: undefined,
+      origin: undefined, status: undefined, include_archived: false,
     })
 
     await wrapper.findAllComponents(ElInput)[0].vm.$emit('update:modelValue', '工资')
@@ -132,6 +147,7 @@ describe('EvaluationView', () => {
 
     expect(evaluationsApi.getEvaluationCases).toHaveBeenLastCalledWith({
       page: 1, size: 20, topic: '工资', expected_type: 'REJECT', is_multi_turn: true,
+      origin: undefined, status: undefined, include_archived: false,
     })
     expect(wrapper.text()).toContain('公司拖欠工资怎么办？')
     wrapper.unmount()
@@ -142,22 +158,29 @@ describe('EvaluationView', () => {
     await flushPromises()
 
     await wrapper.findAllComponents(ElInput)[1].vm.$emit('update:modelValue', '工资回归')
-    await wrapper.findAllComponents(ElSelect)[3].vm.$emit('update:modelValue', 'legal')
+    const answerStyleSelect = wrapper.findAllComponents(ElSelect).find(
+      (component) => component.attributes('aria-label') === '回答风格',
+    )
+    await answerStyleSelect!.vm.$emit('update:modelValue', 'legal')
     await wrapper.get('.evaluation-create-form').trigger('submit')
     await flushPromises()
     expect(evaluationsApi.createEvaluationRun).toHaveBeenCalledWith({
-      name: '工资回归', case_ids: null, answer_style: 'legal',
+      name: '工资回归', case_ids: null, answer_style: 'legal', case_scope: 'BUILTIN_BASELINE',
     })
 
     vi.mocked(evaluationsApi.createEvaluationRun).mockResolvedValueOnce({
       run_id: 9, status: 'PENDING', progress_current: 0, progress_total: 1, error_message: null,
     })
     await wrapper.get('input[aria-label="选择用例 3"]').setValue(true)
+    const scopeSelect = wrapper.findAllComponents(ElSelect).find(
+      (component) => component.attributes('aria-label') === '执行范围',
+    )
+    await scopeSelect!.vm.$emit('update:modelValue', 'SELECTED')
     await wrapper.findAllComponents(ElInput)[1].vm.$emit('update:modelValue', '指定用例')
     await wrapper.get('.evaluation-create-form').trigger('submit')
     await flushPromises()
     expect(evaluationsApi.createEvaluationRun).toHaveBeenLastCalledWith({
-      name: '指定用例', case_ids: [3], answer_style: 'legal',
+      name: '指定用例', case_ids: [3], answer_style: 'legal', case_scope: 'SELECTED',
     })
     wrapper.unmount()
   })

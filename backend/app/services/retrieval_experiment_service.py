@@ -110,6 +110,19 @@ class RetrievalExperimentService:
         snapshot = {
             "answer_style": payload.answer_style.value,
             "case_ids": [case["id"] for case in cases],
+            "case_snapshots": [
+                {
+                    "id": case["id"],
+                    "version": case.get("version", 1),
+                    "topic": case["topic"],
+                    "expected_type": case["expected_type"],
+                    "turns": case["turns"],
+                    "expected_points": case["expected_points"],
+                    "expected_sources": case["expected_sources"],
+                    "should_show_compliance": case["should_show_compliance"],
+                }
+                for case in cases
+            ],
             "configs": [config.model_dump(mode="json") for config in payload.configs],
             "embedding_signature": signature.model_dump(mode="json"),
         }
@@ -132,8 +145,8 @@ class RetrievalExperimentService:
                 "检索实验不存在",
                 http_status=404,
             )
-        cases = self.evaluation_service.repository.get_cases(
-            experiment["snapshot"]["case_ids"]
+        cases = _snapshot_cases(
+            experiment["snapshot"], self.evaluation_service.repository
         )
         config_results = _calculate_config_results(
             cases,
@@ -153,7 +166,7 @@ class RetrievalExperimentService:
             if experiment is None:
                 raise RuntimeError("检索实验不存在")
             snapshot = experiment["snapshot"]
-            cases = self.evaluation_service.repository.get_cases(snapshot["case_ids"])
+            cases = _snapshot_cases(snapshot, self.evaluation_service.repository)
             signature = EmbeddingSignature.model_validate(
                 snapshot["embedding_signature"]
             )
@@ -453,6 +466,17 @@ def _failed_result(config_index: int, case_id: int, message: str) -> dict[str, A
         "retrieval_ms": None,
         "error_message": message[:500],
     }
+
+
+def _snapshot_cases(
+    snapshot: dict[str, Any], repository: Any
+) -> list[dict[str, Any]]:
+    case_snapshots = snapshot.get("case_snapshots")
+    if isinstance(case_snapshots, list) and case_snapshots:
+        return case_snapshots
+    return repository.get_cases(
+        snapshot.get("case_ids"), include_archived=True
+    )
 
 
 def _calculate_config_results(
