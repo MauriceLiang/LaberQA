@@ -645,16 +645,18 @@ onBeforeUnmount(() => {
 
     <ElDialog
       v-model="caseDialogVisible"
+      class="evaluation-case-dialog"
+      modal-class="evaluation-case-overlay"
       :title="editingCase ? '编辑评测用例' : '新建评测用例'"
       width="min(720px, calc(100vw - 32px))"
       destroy-on-close
     >
       <form class="evaluation-case-form" @submit.prevent="saveCase">
-        <label>
+        <label class="evaluation-case-field">
           <span>主题</span>
           <ElInput v-model="caseForm.topic" maxlength="50" show-word-limit placeholder="例如：劳动合同签订期限" />
         </label>
-        <label>
+        <label class="evaluation-case-field">
           <span>预期类型</span>
           <ElSelect v-model="caseForm.expected_type" placeholder="选择预期类型">
             <ElOption label="应回答" value="ANSWER" />
@@ -662,7 +664,7 @@ onBeforeUnmount(() => {
           </ElSelect>
         </label>
 
-        <div class="evaluation-form-array">
+        <div class="evaluation-form-array evaluation-form-section">
           <div class="evaluation-form-array-heading">
             <span>问题轮次</span>
             <ElButton text type="primary" :disabled="caseForm.turns.length >= 10" @click="addCaseTurn">新增轮次</ElButton>
@@ -673,7 +675,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="evaluation-form-array">
+        <div class="evaluation-form-array evaluation-form-section">
           <div class="evaluation-form-array-heading">
             <span>预期要点</span>
             <ElButton text type="primary" :disabled="caseForm.expected_points.length >= 20" @click="addExpectedPoint">新增要点</ElButton>
@@ -684,7 +686,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="evaluation-form-array">
+        <div class="evaluation-form-array evaluation-form-section">
           <div class="evaluation-form-array-heading">
             <span>预期引用来源（可选）</span>
             <ElButton text type="primary" :disabled="caseForm.expected_sources.length >= 20" @click="addExpectedSource">新增来源</ElButton>
@@ -1327,20 +1329,22 @@ onBeforeUnmount(() => {
 
 .evaluation-case-form {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .evaluation-case-form > label,
 .evaluation-switch-row {
   display: grid;
   gap: 6px;
-  color: #536077;
+  color: #3d5c4d;
   font-size: 13px;
 }
 
 .evaluation-case-form > label > span,
 .evaluation-switch-row > span {
-  font-weight: 650;
+  color: #315b4b;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .evaluation-case-form .el-select,
@@ -1348,18 +1352,165 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+:deep(.evaluation-case-dialog.el-dialog) {
+  width: min(780px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  margin-top: 24px;
+  overflow: hidden;
+  border: 1px solid #dbe9e1;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgb(31 68 54 / 18%), 0 3px 12px rgb(31 68 54 / 8%);
+}
+
+:global(.evaluation-case-overlay) {
+  background: rgb(31 68 54 / 42%);
+}
+
+:deep(.evaluation-case-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 22px 28px 15px;
+  background: #fbfdfc;
+  border-bottom: 1px solid #edf3ef;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__title) {
+  color: #155a42;
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__headerbtn) {
+  top: 18px;
+  right: 20px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__headerbtn:hover) {
+  background: #edf7f1;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__close) {
+  color: #72857b;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__headerbtn:hover .el-dialog__close) {
+  color: #185b44;
+}
+
+:deep(.evaluation-case-dialog .el-dialog__body) {
+  max-height: calc(100vh - 155px);
+  padding: 22px 28px 26px;
+  overflow-y: auto;
+  scrollbar-color: #b8d3c4 transparent;
+  scrollbar-width: thin;
+}
+
+.evaluation-case-form :deep(.el-input__wrapper),
+.evaluation-case-form :deep(.el-select__wrapper) {
+  min-height: 44px;
+  padding: 2px 13px;
+  background: #fbfdfc;
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px #d8e5de inset;
+  transition: box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.evaluation-case-form :deep(.el-input__wrapper:hover),
+.evaluation-case-form :deep(.el-select__wrapper:hover) {
+  background: #fff;
+  box-shadow: 0 0 0 1px #a9c8b9 inset;
+}
+
+.evaluation-case-form :deep(.el-input__wrapper.is-focus),
+.evaluation-case-form :deep(.el-select__wrapper.is-focused) {
+  background: #fff;
+  box-shadow: 0 0 0 2px #b9d9c8 inset !important;
+}
+
+.evaluation-case-form :deep(.el-input__inner),
+.evaluation-case-form :deep(.el-select__selected-item),
+.evaluation-case-form :deep(.el-select__placeholder) {
+  color: #354257;
+  font-size: 14px;
+}
+
+.evaluation-case-form :deep(.el-input__inner::placeholder),
+.evaluation-case-form :deep(.el-textarea__inner::placeholder) {
+  color: #9aa9a1;
+}
+
+.evaluation-case-form :deep(.el-textarea__inner) {
+  min-height: 86px;
+  padding: 12px 13px;
+  color: #354257;
+  background: #fbfdfc;
+  border: 0;
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px #d8e5de inset;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.evaluation-case-form :deep(.el-textarea__inner:hover) {
+  background: #fff;
+  box-shadow: 0 0 0 1px #a9c8b9 inset;
+}
+
+.evaluation-case-form :deep(.el-textarea__inner:focus) {
+  background: #fff;
+  box-shadow: 0 0 0 2px #b9d9c8 inset;
+}
+
+.evaluation-case-form :deep(.el-input__count),
+.evaluation-case-form :deep(.el-input__count-inner) {
+  color: #93a39a;
+  background: transparent;
+}
+
 .evaluation-form-array {
   display: grid;
   gap: 8px;
+}
+
+.evaluation-form-section {
+  gap: 10px;
+  padding: 14px 16px 16px;
+  background: #f8fbf9;
+  border: 1px solid #e2eee7;
+  border-radius: 10px;
 }
 
 .evaluation-form-array-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #536077;
+  padding-bottom: 7px;
+  color: #28654e;
+  border-bottom: 1px solid #e5efe9;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.evaluation-form-array-heading .el-button {
+  height: 30px;
+  padding: 0 9px;
+  color: #1c6b50;
+  border-radius: 7px;
   font-size: 13px;
   font-weight: 650;
+}
+
+.evaluation-form-array-heading .el-button:hover:not(.is-disabled) {
+  color: #155a42;
+  background: #eaf5ef;
 }
 
 .evaluation-form-array-row {
@@ -1373,11 +1524,76 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) 140px auto;
 }
 
+.evaluation-form-array-row > .el-button {
+  min-width: 44px;
+  margin-top: 8px;
+  padding: 4px 7px;
+  color: #a8615a;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.evaluation-form-array-row > .el-button:hover:not(.is-disabled) {
+  color: #914a44;
+  background: #fff0ee;
+}
+
+.evaluation-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 9px 16px;
+  background: #f8fbf9;
+  border: 1px solid #e2eee7;
+  border-radius: 10px;
+}
+
+.evaluation-switch-row :deep(.el-switch) {
+  --el-switch-on-color: #126047;
+  --el-switch-off-color: #cbd9d1;
+}
+
 .evaluation-dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid #e8f0eb;
+}
+
+.evaluation-dialog-actions .el-button {
+  min-width: 88px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.evaluation-dialog-actions .el-button:not(.el-button--primary) {
+  color: #466056;
+  background: #fff;
+  border-color: #d6e3dc;
+}
+
+.evaluation-dialog-actions .el-button:not(.el-button--primary):hover {
+  color: #185b44;
+  background: #f4faf6;
+  border-color: #9fc4af;
+}
+
+.evaluation-dialog-actions .el-button.el-button--primary {
+  color: #fff;
+  background: #126047;
+  border-color: #126047;
+  box-shadow: 0 5px 12px rgb(18 96 71 / 16%);
+}
+
+.evaluation-dialog-actions .el-button.el-button--primary:hover:not(.is-disabled) {
+  background: #0f523c;
+  border-color: #0f523c;
 }
 
 .evaluation-create-input :deep(.el-input__inner::placeholder) {
@@ -1677,6 +1893,35 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 620px) {
+  :deep(.evaluation-case-dialog.el-dialog) {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px);
+    margin-top: 10px;
+  }
+
+  :deep(.evaluation-case-dialog .el-dialog__header) {
+    padding: 18px 18px 12px;
+  }
+
+  :deep(.evaluation-case-dialog .el-dialog__body) {
+    max-height: calc(100vh - 112px);
+    padding: 18px 18px 20px;
+  }
+
+  :deep(.evaluation-case-dialog .el-dialog__title) {
+    font-size: 21px;
+  }
+
+  .evaluation-form-array-row,
+  .evaluation-source-row {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-form-array-row > .el-button {
+    justify-self: end;
+    margin-top: 0;
+  }
+
   .evaluation-page {
     width: 100%;
     gap: 10px;
