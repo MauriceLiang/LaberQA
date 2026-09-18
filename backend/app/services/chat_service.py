@@ -400,11 +400,9 @@ class ChatService:
     async def _rewrite_question(
         self, history: list[dict[str, Any]], question: str
     ) -> str:
-        self._sync_rag_chain()
         return await self.rag_chain.rewrite_question(history, question)
 
     async def _retrieve_evidence(self, question: str) -> list[dict[str, Any]]:
-        self._sync_rag_chain()
         return await self.rag_chain.retrieve(question)
 
     async def _judge_evidence(
@@ -414,7 +412,6 @@ class ChatService:
         *,
         strict: bool = False,
     ) -> tuple[bool, MissingKnowledgeReason | None]:
-        self._sync_rag_chain()
         return await self.rag_chain.judge_evidence(question, evidence, strict=strict)
 
     def _answer_messages(
@@ -426,7 +423,6 @@ class ChatService:
         compliance_required: bool,
         tool_execution: ToolExecutionItem | None,
     ) -> list[dict[str, str]]:
-        self._sync_rag_chain()
         return self.rag_chain.answer_messages(
             answer_style,
             question,
@@ -435,9 +431,6 @@ class ChatService:
             compliance_required,
             tool_execution,
         )
-
-    def _sync_rag_chain(self) -> None:
-        self.rag_chain.set_chat_model(self.chat_model)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:

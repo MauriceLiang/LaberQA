@@ -66,6 +66,14 @@ class _ExperimentChunkRepository:
     def list_success_chunks(self) -> list[dict[str, Any]]:
         return self.chunks
 
+    def get_chunks_by_ids(self, chunk_ids: list[int]) -> dict[int, dict[str, Any]]:
+        requested_ids = {int(chunk_id) for chunk_id in chunk_ids}
+        return {
+            int(chunk["id"]): chunk
+            for chunk in self.chunks
+            if int(chunk["id"]) in requested_ids
+        }
+
 
 class RetrievalExperimentService:
     def __init__(

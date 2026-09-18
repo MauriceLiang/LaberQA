@@ -39,7 +39,11 @@ class FakeVectorStore:
 
 
 class FakeRepository:
-    def list_success_chunks(self) -> list[dict[str, Any]]:
+    def __init__(self) -> None:
+        self.requested_chunk_ids: list[int] = []
+        self.list_success_chunks_calls = 0
+
+    def _chunks(self) -> list[dict[str, Any]]:
         return [
             {
                 "id": 1,
@@ -57,6 +61,15 @@ class FakeRepository:
             },
         ]
 
+    def list_success_chunks(self) -> list[dict[str, Any]]:
+        self.list_success_chunks_calls += 1
+        return self._chunks()
+
+    def get_chunks_by_ids(self, chunk_ids: list[int]) -> dict[int, dict[str, Any]]:
+        self.requested_chunk_ids = list(chunk_ids)
+        chunks = self._chunks()
+        return {int(chunk["id"]): chunk for chunk in chunks if chunk["id"] in chunk_ids}
+
 
 class FakeCrossEncoder:
     def __init__(self, scores: list[float]) -> None:
@@ -72,9 +85,10 @@ def test_retrieval_maps_only_successful_chunks_and_preserves_faiss_order() -> No
     config = Settings(database_url="sqlite:////tmp/retrieval-test.db", rag_top_k=4)
     embedding = FakeEmbedding()
     vector_store = FakeVectorStore()
+    repository = FakeRepository()
     service = RetrievalService(
         config,
-        repository=FakeRepository(),
+        repository=repository,
         embedding_service=embedding,
         vector_store=vector_store,
     )
@@ -84,6 +98,8 @@ def test_retrieval_maps_only_successful_chunks_and_preserves_faiss_order() -> No
     assert embedding.query == "测试问题"
     assert vector_store.query_vector == [0.1, 0.2]
     assert vector_store.top_k == 4
+    assert repository.requested_chunk_ids == [2, 99, 1]
+    assert repository.list_success_chunks_calls == 0
     assert [item["chunk_id"] for item in evidence] == [2, 1]
     assert [item["rank_no"] for item in evidence] == [1, 2]
     assert evidence[0]["file_name"] == "劳动合同法.pdf"

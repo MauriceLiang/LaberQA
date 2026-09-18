@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from langchain_core.documents import Document
@@ -96,9 +96,12 @@ class DomainRetrievalService:
             raise VectorStoreSignatureMismatch("当前 Embedding 签名与生产索引不一致")
 
     def _retrieve_with_legacy_vector_store(self, query: str) -> list[dict[str, Any]]:
+        # Compatibility path for injected vector stores that predate the
+        # LangChain ``as_retriever`` interface. Production uses ``retriever``;
+        # remove this path after downstream custom stores have migrated.
         query_vector = self.embedding_service.embed_query(query)
-        hits = self.vector_store.search(query_vector, self.config.rag_top_k)
-        chunks_by_id = self._successful_chunks_by_id()
+        hits = list(self.vector_store.search(query_vector, self.config.rag_top_k))
+        chunks_by_id = self._chunks_by_ids(chunk_id for chunk_id, _ in hits)
         evidence: list[dict[str, Any]] = []
         seen: set[int] = set()
         for chunk_id, score in hits:
@@ -115,8 +118,10 @@ class DomainRetrievalService:
         self, state: Mapping[str, Any]
     ) -> list[Document]:
         query = str(state["query"])
-        candidate_documents = state["documents"]
-        chunks_by_id = self._successful_chunks_by_id()
+        candidate_documents = list(state["documents"])
+        chunks_by_id = self._chunks_by_ids(
+            _document_chunk_id(document) for document in candidate_documents
+        )
         evidence: list[dict[str, Any]] = []
         seen: set[int] = set()
         for document in candidate_documents:
@@ -139,9 +144,20 @@ class DomainRetrievalService:
             for item in self._apply_rerank(query, evidence)
         ]
 
-    def _successful_chunks_by_id(self) -> dict[int, dict[str, Any]]:
+    def _chunks_by_ids(self, chunk_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+        normalized_ids = list(dict.fromkeys(int(chunk_id) for chunk_id in chunk_ids))
+        if not normalized_ids:
+            return {}
+
+        get_chunks_by_ids = getattr(self.repository, "get_chunks_by_ids", None)
+        if callable(get_chunks_by_ids):
+            return get_chunks_by_ids(normalized_ids)
+
+        # Compatibility fallback for injected repositories from older clients.
         return {
-            int(chunk["id"]): chunk for chunk in self.repository.list_success_chunks()
+            int(chunk["id"]): chunk
+            for chunk in self.repository.list_success_chunks()
+            if int(chunk["id"]) in normalized_ids
         }
 
     def _apply_rerank(
