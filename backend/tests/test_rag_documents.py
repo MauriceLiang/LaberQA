@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.rag.constants import CURRENT_SPLITTER_VERSION
-from app.rag.loaders import LaberQADocumentLoader
+from app.rag.loaders import LaborQADocumentLoader
 from app.rag.splitters import LegalTextSplitter
 
 
@@ -14,7 +14,7 @@ def test_loader_returns_langchain_document_with_standard_metadata(
 ) -> None:
     source = tmp_path / "stored-name.txt"
     source.write_text("第一条  工资应当按时支付。\r\n", encoding="utf-8")
-    loader = LaberQADocumentLoader(
+    loader = LaborQADocumentLoader(
         source,
         metadata={"document_id": 7, "file_name": "劳动法.txt"},
     )

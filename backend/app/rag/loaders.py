@@ -12,7 +12,7 @@ from app.core.config import Settings, settings
 from app.services.document_parser import ParserFactory
 
 
-class LaberQADocumentLoader(BaseLoader):
+class LaborQADocumentLoader(BaseLoader):
     """Load a supported file into one LangChain ``Document``.
 
     Parsing remains delegated to ``ParserFactory`` so legacy DOC conversion,

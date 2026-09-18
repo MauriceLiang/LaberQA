@@ -146,7 +146,7 @@ class LangChainEmbeddingServiceTests(unittest.TestCase):
 
 
 @pytest.mark.skipif(
-    os.getenv("LABERQA_RUN_LOCAL_BGE_INTEGRATION") != "1",
+    os.getenv("LABORQA_RUN_LOCAL_BGE_INTEGRATION") != "1",
     reason="requires a compatible local BGE and FAISS/Torch OpenMP runtime",
 )
 def test_cached_bge_embeddings_round_trip_through_faiss(tmp_path: Path) -> None:

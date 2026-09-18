@@ -68,7 +68,7 @@ class _UnavailableEmbeddings(Embeddings):
 
 
 class VectorStoreService(VectorStore):
-    """Persisted LangChain FAISS store with LaberQA's business compatibility.
+    """Persisted LangChain FAISS store with LaborQA's business compatibility.
 
     SQLite remains the source of truth for chunk content.  The LangChain
     ``FAISS`` instance therefore keeps a small in-memory Document projection

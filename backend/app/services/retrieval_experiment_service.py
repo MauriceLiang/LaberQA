@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
-from app.rag.loaders import LaberQADocumentLoader
+from app.rag.loaders import LaborQADocumentLoader
 from app.rag.splitters import LegalTextSplitter
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.evaluation_repository import EvaluationRepository
@@ -834,7 +834,7 @@ class RetrievalExperimentService:
             "file_type": str(document["file_type"]),
         }
         if self.parser is ParserFactory:
-            return LaberQADocumentLoader(
+            return LaborQADocumentLoader(
                 document["file_path"],
                 document["file_type"],
                 config=self.config,
