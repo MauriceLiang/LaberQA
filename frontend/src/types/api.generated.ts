@@ -667,6 +667,8 @@ export interface components {
             accuracy: number | null;
             /** Reject Rate */
             reject_rate: number | null;
+            /** Refusal Rate */
+            refusal_rate: number | null;
             /** Citation Hit Rate */
             citation_hit_rate: number | null;
             /** Multi Turn Pass Rate */
@@ -702,17 +704,14 @@ export interface components {
             /** Error Message */
             error_message: string | null;
         };
-        /** EvaluationRunConfig */
-        EvaluationRunConfig: {
-            answer_style: components["schemas"]["AnswerStyle"];
-            /** @default BUILTIN_BASELINE */
-            case_scope: components["schemas"]["EvaluationCaseScope"];
+        /** LangChainRuntimeConfig */
+        LangChainRuntimeConfig: {
+            /** Langchain Version */
+            langchain_version: string;
+            /** Chat Provider */
+            chat_provider: string;
             /** Llm Model */
             llm_model: string;
-            /** Evaluator Model */
-            evaluator_model: string;
-            /** Evaluator Prompt Version */
-            evaluator_prompt_version: string;
             /**
              * Embedding Provider
              * @enum {string}
@@ -722,6 +721,50 @@ export interface components {
             embedding_model: string;
             /** Embedding Normalize */
             embedding_normalize: boolean;
+            /** Splitter Type */
+            splitter_type: string;
+            /** Splitter Version */
+            splitter_version: string;
+            /** Vectorstore Type */
+            vectorstore_type: string;
+            /** Retrieval Type */
+            retrieval_type: string;
+            /** Rerank Model */
+            rerank_model: string | null;
+            /** Prompt Version */
+            prompt_version: string;
+        };
+        /** EvaluationRunConfig */
+        EvaluationRunConfig: {
+            /** Langchain Version */
+            langchain_version: string;
+            /** Chat Provider */
+            chat_provider: string;
+            answer_style: components["schemas"]["AnswerStyle"];
+            /** @default BUILTIN_BASELINE */
+            case_scope: components["schemas"]["EvaluationCaseScope"];
+            /** Llm Model */
+            llm_model: string;
+            /** Evaluator Model */
+            evaluator_model: string;
+            /** Evaluator Prompt Version */
+            evaluator_prompt_version: string;
+            /** Embedding Provider */
+            embedding_provider: "local" | "api";
+            /** Embedding Model */
+            embedding_model: string;
+            /** Embedding Normalize */
+            embedding_normalize: boolean;
+            /** Splitter Type */
+            splitter_type: string;
+            /** Splitter Version */
+            splitter_version: string;
+            /** Vectorstore Type */
+            vectorstore_type: string;
+            /** Retrieval Type */
+            retrieval_type: string;
+            /** Rerank Model */
+            rerank_model: string | null;
             /** Prompt Version */
             prompt_version: string;
             /** Chunk Size */
@@ -876,6 +919,7 @@ export interface components {
             /** Name */
             name: string;
             embedding_signature: components["schemas"]["EmbeddingSignature"];
+            runtime_config: components["schemas"]["LangChainRuntimeConfig"];
             /** Best Config Index */
             best_config_index: number | null;
             /** Config Results */

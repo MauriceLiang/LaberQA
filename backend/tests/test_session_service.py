@@ -3,6 +3,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+
 from app.core.errors import AppError
 from app.repositories.session_repository import SessionRepository
 from app.schemas.contracts import MessageItem, SessionItem

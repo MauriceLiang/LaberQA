@@ -7,9 +7,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from langchain_core.exceptions import OutputParserException
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.errors import EmbeddingUnavailableError, ModelUnavailableError
+from app.rag.runtime_config import runtime_config_snapshot
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.schemas.contracts import (
     AnswerStyle,
@@ -21,9 +27,7 @@ from app.schemas.contracts import (
     EvaluationRunCreate,
 )
 from app.services.chat_service import ChatService
-from app.services.embedding import EmbeddingUnavailableError
 from app.services.evaluation_cases import fixed_evaluation_cases
-from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import ExecutionMode
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -81,7 +85,9 @@ class EvaluationService:
     def create_case(self, payload: EvaluationCaseCreate) -> dict[str, Any]:
         return self.repository.create_case(payload.model_dump(mode="json"))
 
-    def get_case(self, case_id: int, *, include_archived: bool = False) -> dict[str, Any]:
+    def get_case(
+        self, case_id: int, *, include_archived: bool = False
+    ) -> dict[str, Any]:
         case = self.repository.get_case(case_id, include_archived=include_archived)
         if case is None:
             raise AppError(
@@ -179,15 +185,11 @@ class EvaluationService:
                 http_status=400,
             )
         snapshot = {
+            **runtime_config_snapshot(self.config),
             "answer_style": payload.answer_style.value,
             "case_scope": case_scope.value,
-            "llm_model": self.config.llm_model,
             "evaluator_model": self.config.llm_model,
             "evaluator_prompt_version": _EVALUATOR_PROMPT_VERSION,
-            "embedding_provider": self.config.embedding_provider,
-            "embedding_model": self.config.embedding_model,
-            "embedding_normalize": self.config.embedding_normalize,
-            "prompt_version": "labor_langchain_v1",
             "chunk_size": self.config.chunk_size,
             "chunk_overlap": self.config.chunk_overlap,
             "top_k": self.config.rag_top_k,
@@ -213,6 +215,10 @@ class EvaluationService:
                 "评测批次不存在",
                 http_status=404,
             )
+        run["config"] = {
+            **runtime_config_snapshot(self.config),
+            **run["config"],
+        }
         return run
 
     def delete_run(self, run_id: int) -> None:
@@ -353,18 +359,31 @@ class EvaluationService:
             "rewritten_question": final["rewritten_question"],
             "answer": final["answer"],
         }
-        raw = await self.chat_service.llm_client.complete(
+        chat_model = getattr(self.chat_service, "chat_model", None)
+        if chat_model is None:
+            raise ModelUnavailableError("评测模型尚未配置")
+        prompt = ChatPromptTemplate.from_messages(
             [
-                {"role": "system", "content": self.evaluator_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps(prompt_input, ensure_ascii=False),
-                },
+                ("system", _escape_fstring_literals(self.evaluator_prompt)),
+                ("human", "{payload}"),
             ],
-            json_mode=True,
-            temperature=0,
+            template_format="f-string",
         )
-        value = json.loads(raw)
+        try:
+            value = await (
+                prompt
+                | chat_model.bind(
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                )
+                | JsonOutputParser()
+            ).ainvoke({"payload": json.dumps(prompt_input, ensure_ascii=False)})
+        except ModelUnavailableError:
+            raise
+        except OutputParserException as exc:
+            raise TypeError("评测器未返回有效 JSON") from exc
+        except Exception as exc:
+            raise ModelUnavailableError("模型服务暂不可用") from exc
         if not isinstance(value, dict) or not isinstance(value.get("correct"), bool):
             raise TypeError("评测器未返回有效的 correct 判断")
         context_retained = value.get("context_retained", len(case["turns"]) == 1)
@@ -385,6 +404,10 @@ class EvaluationService:
         if isinstance(exc, VectorStorePersistenceError):
             return "知识库索引不可用"
         return str(exc) or "评测任务失败"
+
+
+def _escape_fstring_literals(value: str) -> str:
+    return value.replace("{", "{{").replace("}", "}}")
 
 
 def _failed_result(case_id: int, error_message: str) -> dict[str, Any]:
@@ -441,6 +464,10 @@ def _calculate_metrics(
         "reject_rate": rate(
             sum(completed[case["id"]]["correct"] is True for case in rejects),
             len(rejects),
+        ),
+        "refusal_rate": rate(
+            sum(result["refused"] is True for result in completed.values()),
+            len(completed),
         ),
         "citation_hit_rate": rate(
             sum(completed[case["id"]]["source_hit"] is True for case in citation_cases),

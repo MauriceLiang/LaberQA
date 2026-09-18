@@ -1,5 +1,7 @@
 # 劳动权益咨询问答台
 
+项目名：**LaborQA**（Labor Rights QA）。
+
 一个基于检索增强生成（RAG）的劳动权益信息辅助工具。用户导入法规与政策资料后，可以用自然语言提问；系统检索知识库中的相关依据，生成回答并展示来源。资料不足时，系统会提示依据不足，不以模型常识替代法规证据。
 
 > 本项目用于信息辅助，不替代律师或行政机关提供的正式法律意见。
@@ -32,7 +34,7 @@ flowchart LR
 | --- | --- |
 | 前端 | Vue 3、TypeScript、Vite、Element Plus、Pinia |
 | 后端 | Python 3.11+、FastAPI、Pydantic |
-| RAG 编排 | langchain==1.4.1（核心接口从 `langchain_core` 导入） |
+| RAG 编排 | LangChain `1.4.1`（集成包版本锁定在 `backend/requirements.txt`） |
 | 关系数据与文件 | SQLite、本地文件存储 |
 | 向量检索 | FAISS |
 | 文本向量化 | 本地 `BAAI/bge-small-zh-v1.5`（默认），或 OpenAI-compatible Embedding API |
@@ -102,7 +104,7 @@ npm run dev
 
 ## 首次使用
 
-项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 `langchain` 提供的 `langchain_core` Retriever、Prompt 和 Runnable 编排，底层继续使用项目自己的 SQLite 元数据、FAISS 索引和 OpenAI-compatible LLM 客户端。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
+项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
 
 后端启动时会自动初始化 SQLite 数据库，无需手动执行 SQL。默认数据位置如下：
 

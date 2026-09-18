@@ -257,7 +257,9 @@ class ParserFactoryTests(unittest.TestCase):
         modules = self._fake_docx_modules()
         output_directories: list[Path] = []
 
-        def convert(_source: str | Path, destination: str | Path) -> types.SimpleNamespace:
+        def convert(
+            _source: str | Path, destination: str | Path
+        ) -> types.SimpleNamespace:
             destination_path = Path(destination)
             output_directories.append(destination_path.parent)
             destination_path.write_bytes(b"converted")
@@ -284,7 +286,9 @@ class ParserFactoryTests(unittest.TestCase):
         source = self.root / "law.doc"
         source.write_bytes(b"doc")
 
-        def convert(_source: str | Path, destination: str | Path) -> types.SimpleNamespace:
+        def convert(
+            _source: str | Path, destination: str | Path
+        ) -> types.SimpleNamespace:
             Path(destination).write_bytes(b"converted")
             diagnostic = types.SimpleNamespace(severity="error")
             return types.SimpleNamespace(

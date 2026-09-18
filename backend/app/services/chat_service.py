@@ -9,10 +9,18 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Request
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.chains import (
+    ANSWER_STYLE_INSTRUCTIONS,
+    REFUSAL_TEXT,
+    RagChain,
+)
+from app.rag.errors import EmbeddingUnavailableError, ModelUnavailableError
+from app.rag.providers import build_chat_model
 from app.schemas.contracts import (
     AnswerStyle,
     ChatRequest,
@@ -22,18 +30,11 @@ from app.schemas.contracts import (
     ToolExecutionItem,
 )
 from app.services.compliance import COMPLIANCE_NOTICE, ComplianceRuleService
-from app.services.embedding import EmbeddingUnavailableError
-from app.services.llm import LlmClient, ModelUnavailableError
 from app.services.material_checklist import MaterialChecklistTool, ToolDecisionService
 from app.services.missing_knowledge import (
     ExecutionMode,
     MissingKnowledgeReason,
     MissingKnowledgeService,
-)
-from app.services.rag_chain import (
-    ANSWER_STYLE_INSTRUCTIONS,
-    REFUSAL_TEXT,
-    RagChain,
 )
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import (
@@ -47,6 +48,18 @@ _REFUSAL = REFUSAL_TEXT
 _ANSWER_STYLE_INSTRUCTIONS = ANSWER_STYLE_INSTRUCTIONS
 
 
+class _UnavailableChatModel(BaseChatModel):
+    """Keep startup lazy when the existing LLM configuration is incomplete."""
+
+    @property
+    def _llm_type(self) -> str:
+        return "unavailable"
+
+    def _generate(self, *args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise ModelUnavailableError("LLM_API_KEY、LLM_BASE_URL、LLM_MODEL 尚未配置")
+
+
 class ChatService:
     def __init__(
         self,
@@ -54,14 +67,19 @@ class ChatService:
         retrieval_service: RetrievalService,
         config: Settings = settings,
         *,
-        llm_client: LlmClient | None = None,
+        chat_model: BaseChatModel | None = None,
         missing_knowledge_service: MissingKnowledgeService | None = None,
     ) -> None:
         self.session_service = session_service
         self.retrieval_service = retrieval_service
         self.config = config
-        self.llm_client = llm_client or LlmClient(config)
-        self.rag_chain = RagChain(retrieval_service, self.llm_client, config)
+        if chat_model is not None:
+            self.chat_model = chat_model
+        elif all((config.llm_api_key, config.llm_base_url, config.llm_model)):
+            self.chat_model = build_chat_model(config)
+        else:
+            self.chat_model = _UnavailableChatModel()
+        self.rag_chain = RagChain(retrieval_service, self.chat_model, config)
         self.tool_decision_service = ToolDecisionService()
         self.material_checklist_tool = MaterialChecklistTool()
         self.compliance_rule_service = ComplianceRuleService()
@@ -382,11 +400,9 @@ class ChatService:
     async def _rewrite_question(
         self, history: list[dict[str, Any]], question: str
     ) -> str:
-        self._sync_rag_chain()
         return await self.rag_chain.rewrite_question(history, question)
 
     async def _retrieve_evidence(self, question: str) -> list[dict[str, Any]]:
-        self._sync_rag_chain()
         return await self.rag_chain.retrieve(question)
 
     async def _judge_evidence(
@@ -396,7 +412,6 @@ class ChatService:
         *,
         strict: bool = False,
     ) -> tuple[bool, MissingKnowledgeReason | None]:
-        self._sync_rag_chain()
         return await self.rag_chain.judge_evidence(question, evidence, strict=strict)
 
     def _answer_messages(
@@ -408,7 +423,6 @@ class ChatService:
         compliance_required: bool,
         tool_execution: ToolExecutionItem | None,
     ) -> list[dict[str, str]]:
-        self._sync_rag_chain()
         return self.rag_chain.answer_messages(
             answer_style,
             question,
@@ -417,11 +431,6 @@ class ChatService:
             compliance_required,
             tool_execution,
         )
-
-    def _sync_rag_chain(self) -> None:
-        # Tests and callers may replace llm_client after construction; keep the
-        # LangChain adapter bound to the current client.
-        self.rag_chain.set_llm_client(self.llm_client)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:

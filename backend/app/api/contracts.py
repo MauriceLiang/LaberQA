@@ -421,9 +421,7 @@ def get_evaluation_case(
     return ApiResponse(
         code=0,
         message="success",
-        data=EvaluationCase.model_validate(
-            service.get_case(id, include_archived=True)
-        ),
+        data=EvaluationCase.model_validate(service.get_case(id, include_archived=True)),
     )
 
 
@@ -623,7 +621,7 @@ def list_retrieval_strategies(
         message="success",
         data=[
             RetrievalStrategy.model_validate(item)
-                for item in service.list_strategies(include_archived=include_archived)
+            for item in service.list_strategies(include_archived=include_archived)
         ],
     )
 

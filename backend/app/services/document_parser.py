@@ -156,7 +156,7 @@ class ParserFactory:
 
         try:
             with tempfile.TemporaryDirectory(
-                prefix="laberqa-doc-convert-"
+                prefix="laborqa-doc-convert-"
             ) as directory:
                 converted_path = Path(directory) / "converted.docx"
                 result = convert(path, converted_path)
@@ -191,7 +191,7 @@ class ParserFactory:
 
         try:
             with tempfile.TemporaryDirectory(
-                prefix="laberqa-doc-convert-"
+                prefix="laborqa-doc-convert-"
             ) as directory:
                 temporary_directory = Path(directory)
                 user_profile = temporary_directory / "profile"

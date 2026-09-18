@@ -327,6 +327,20 @@ async function loadRuns() {
   }
 }
 
+function syncRunSummary(detail: EvaluationRunDetail) {
+  const index = runs.value.findIndex((run) => run.id === detail.id)
+  if (index === -1) return
+
+  runs.value[index] = {
+    ...runs.value[index],
+    name: detail.name,
+    status: detail.status,
+    progress_current: detail.progress_current,
+    progress_total: detail.progress_total,
+    error_message: detail.error_message,
+  }
+}
+
 function stopPolling() {
   if (pollTimer !== undefined) {
     clearInterval(pollTimer)
@@ -351,6 +365,7 @@ async function loadRunDetail(id: number, showLoading = false) {
     const result = await getEvaluationRun(id)
     if (version !== selectedRunVersion || selectedRunId.value !== id) return
     runDetail.value = result
+    syncRunSummary(result)
     if (terminalStatus(result.status)) stopPolling()
     else startPolling(id)
   } catch (error) {
@@ -871,7 +886,8 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="runDetail.metrics" class="evaluation-metrics" aria-label="评测指标">
           <div><span>回答正确率</span><strong>{{ formatRate(runDetail.metrics.accuracy) }}</strong></div>
-          <div><span>拒答率</span><strong>{{ formatRate(runDetail.metrics.reject_rate) }}</strong></div>
+          <div><span title="应拒答用例中正确拒答的比例">应拒答命中率</span><strong>{{ formatRate(runDetail.metrics.reject_rate) }}</strong></div>
+          <div><span title="全部已完成用例中实际触发拒答的比例">实际拒答率</span><strong>{{ formatRate(runDetail.metrics.refusal_rate) }}</strong></div>
           <div><span>引用命中率</span><strong>{{ formatRate(runDetail.metrics.citation_hit_rate) }}</strong></div>
           <div><span>多轮通过率</span><strong>{{ formatRate(runDetail.metrics.multi_turn_pass_rate) }}</strong></div>
           <div><span>合规提示命中率</span><strong>{{ formatRate(runDetail.metrics.compliance_hit_rate) }}</strong></div>
@@ -1750,7 +1766,7 @@ onBeforeUnmount(() => {
 
 .evaluation-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-top: 14px;
 }
 

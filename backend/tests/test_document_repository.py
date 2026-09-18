@@ -51,6 +51,17 @@ def test_document_filtering_pagination_and_chunk_lifecycle(
 
     successful_chunks = repository.list_success_chunks()
     assert [chunk["content"] for chunk in successful_chunks] == ["第一段", "第二段"]
+    selected_chunks = repository.get_chunks_by_ids(
+        [successful_chunks[1]["id"], 999999, successful_chunks[0]["id"]]
+    )
+    assert list(selected_chunks) == [
+        successful_chunks[0]["id"],
+        successful_chunks[1]["id"],
+    ]
+    assert [chunk["content"] for chunk in selected_chunks.values()] == [
+        "第一段",
+        "第二段",
+    ]
     assert (
         repository.update_document(
             first["id"], status="FAILED", error_message="导入失败"
@@ -58,6 +69,7 @@ def test_document_filtering_pagination_and_chunk_lifecycle(
         == "导入失败"
     )
     assert repository.list_success_chunks() == []
+    assert repository.get_chunks_by_ids([successful_chunks[0]["id"]]) == {}
 
 
 def test_foreign_keys_are_enabled_for_every_repository_connection(

@@ -1,8 +1,8 @@
-from app.services.embedding import EmbeddingService
+from app.rag.embeddings import LangChainEmbeddingService
 
 
 def main() -> None:
-    vector = EmbeddingService().embed_query("劳动合同中的工资支付规定")
+    vector = LangChainEmbeddingService().embed_query("劳动合同中的工资支付规定")
     print(f"Embedding verification passed: dimension={len(vector)}")
 
 

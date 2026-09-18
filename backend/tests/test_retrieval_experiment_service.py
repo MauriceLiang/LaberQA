@@ -33,6 +33,7 @@ from app.services.retrieval_experiment_service import (
 )
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreService
+from tests.support import AsyncClientChatModel
 
 
 class FakeEmbeddingService:
@@ -54,7 +55,7 @@ class FakeEmbeddingService:
         return [1.0, 0.0]
 
 
-class FakeLlmClient:
+class FakeChatClient:
     async def complete(
         self,
         messages: list[dict[str, str]],
@@ -176,7 +177,7 @@ def _make_environment(
         SessionService(database_path=database_path),
         retrieval_service,
         config,
-        llm_client=FakeLlmClient(),
+        chat_model=AsyncClientChatModel(FakeChatClient()),
         missing_knowledge_service=MissingKnowledgeService(database_path=database_path),
     )
     evaluation_service = EvaluationService(
@@ -218,6 +219,12 @@ def test_experiment_uses_isolated_rechunked_indexes_and_persists_case_metrics(
             configs=_configs(),
         )
     )
+    snapshot = repository.get_experiment(experiment["id"])["snapshot"]
+    assert snapshot["runtime_config"]["langchain_version"]
+    assert snapshot["runtime_config"]["vectorstore_type"] == (
+        "langchain_community.vectorstores.FAISS"
+    )
+    assert snapshot["runtime_config"]["retrieval_type"] == "similarity"
 
     add_result = repository.add_result
 
@@ -232,6 +239,7 @@ def test_experiment_uses_isolated_rechunked_indexes_and_persists_case_metrics(
 
     detail = service.get_experiment(experiment["id"])
     assert detail["status"] == "COMPLETED"
+    assert detail["runtime_config"] == snapshot["runtime_config"]
     assert detail["progress_current"] == detail["progress_total"] == 4
     assert progress == [1, 2, 3, 4]
     assert detail["embedding_signature"]["embedding_model"] == "offline-test-embedding"
@@ -495,4 +503,5 @@ def test_experiment_endpoints_accept_and_return_the_completed_job(
     assert detail.status_code == 200
     assert detail.json()["data"]["status"] == "COMPLETED"
     assert detail.json()["data"]["progress_current"] == 2
+    assert detail.json()["data"]["runtime_config"]["retrieval_type"] == "similarity"
     assert len(detail.json()["data"]["config_results"]) == 1

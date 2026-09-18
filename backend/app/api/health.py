@@ -3,8 +3,8 @@ from fastapi import APIRouter, Request
 from app.core.config import settings
 from app.core.database import database_is_ready
 from app.core.schemas import ApiResponse, HealthData
+from app.rag.providers import local_embedding_is_cached
 from app.services.document_parser import is_doc_parser_available
-from app.services.embedding import local_embedding_is_cached
 from app.services.vector_store import VectorStoreSignatureMismatch
 
 router = APIRouter()
