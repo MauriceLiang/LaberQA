@@ -20,6 +20,8 @@ def initialize_database() -> None:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         _migrate_evaluation_schema(connection)
+        _migrate_retrieval_experiment_schema(connection)
+        _migrate_retrieval_strategy_schema(connection)
 
 
 def _migrate_evaluation_schema(connection: sqlite3.Connection) -> None:
@@ -107,6 +109,60 @@ def _migrate_evaluation_schema(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_case_builtin_key "
         "ON evaluation_case(builtin_key) WHERE builtin_key IS NOT NULL"
+    )
+
+
+def _migrate_retrieval_strategy_schema(connection: sqlite3.Connection) -> None:
+    """Add strategy lifecycle fields to databases created before P1-A."""
+
+    columns = _table_columns(connection, "retrieval_strategy")
+    additions = {
+        "version": "INTEGER NOT NULL DEFAULT 1",
+        "is_active": "INTEGER NOT NULL DEFAULT 1",
+        "archived_at": "TEXT",
+    }
+    for column, definition in additions.items():
+        if column not in columns:
+            connection.execute(
+                f"ALTER TABLE retrieval_strategy ADD COLUMN {column} {definition}"
+            )
+
+    connection.execute(
+        "UPDATE retrieval_strategy SET version = COALESCE(version, 1), "
+        "is_active = COALESCE(is_active, 1)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_retrieval_strategy_archive_status "
+        "ON retrieval_strategy(archived_at, is_active, id)"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS retrieval_strategy_version ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "strategy_id INTEGER NOT NULL REFERENCES retrieval_strategy(id) ON DELETE CASCADE, "
+        "version INTEGER NOT NULL CHECK (version >= 1), "
+        "name VARCHAR(100) NOT NULL, "
+        "description VARCHAR(255) NOT NULL DEFAULT '', "
+        "config_json TEXT NOT NULL, "
+        "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+        "UNIQUE (strategy_id, version))"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_retrieval_strategy_version_strategy "
+        "ON retrieval_strategy_version(strategy_id, version DESC)"
+    )
+
+
+def _migrate_retrieval_experiment_schema(connection: sqlite3.Connection) -> None:
+    """Add lifecycle fields to experiments created before record management."""
+
+    columns = _table_columns(connection, "retrieval_experiment")
+    if "archived_at" not in columns:
+        connection.execute(
+            "ALTER TABLE retrieval_experiment ADD COLUMN archived_at TEXT"
+        )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_retrieval_experiment_archive_created_at "
+        "ON retrieval_experiment(archived_at, created_at DESC, id DESC)"
     )
 
 

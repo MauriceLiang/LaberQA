@@ -8,7 +8,16 @@ from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
 from app.main import app
-from app.schemas.contracts import EvaluationCase, ExperimentConfig
+from app.repositories.evaluation_repository import EvaluationRepository
+from app.repositories.retrieval_experiment_repository import RetrievalExperimentRepository
+from app.repositories.retrieval_strategy_repository import RetrievalStrategyRepository
+from app.schemas.contracts import (
+    EvaluationCase,
+    ExperimentConfig,
+    RetrievalStrategyCreate,
+    RetrievalStrategyUpdate,
+)
+from app.services.retrieval_experiment_service import RetrievalExperimentService
 from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -39,7 +48,22 @@ EXPECTED_OPERATIONS = {
     ("patch", "/api/missing-knowledge/{id}"),
     ("get", "/api/retrieval-experiments"),
     ("post", "/api/retrieval-experiments"),
+    ("post", "/api/retrieval-experiments/preview"),
+    ("post", "/api/retrieval-experiments/{id}/copy"),
+    ("get", "/api/retrieval-experiments/{id}/export"),
+    ("post", "/api/retrieval-experiments/{id}/archive"),
+    ("post", "/api/retrieval-experiments/{id}/restore"),
     ("get", "/api/retrieval-experiments/{id}"),
+    ("delete", "/api/retrieval-experiments/{id}"),
+    ("get", "/api/retrieval-strategies"),
+    ("post", "/api/retrieval-strategies"),
+    ("patch", "/api/retrieval-strategies/{id}/status"),
+    ("get", "/api/retrieval-strategies/{id}/versions"),
+    ("post", "/api/retrieval-strategies/{id}/versions/{version}/restore"),
+    ("post", "/api/retrieval-strategies/{id}/archive"),
+    ("post", "/api/retrieval-strategies/{id}/restore"),
+    ("patch", "/api/retrieval-strategies/{id}"),
+    ("delete", "/api/retrieval-strategies/{id}"),
 }
 
 
@@ -241,6 +265,7 @@ class Phase1ContractTests(unittest.TestCase):
             "missing_knowledge",
             "retrieval_experiment",
             "retrieval_experiment_result",
+            "retrieval_strategy",
         }
         with tempfile.TemporaryDirectory() as directory:
             database_path = Path(directory) / "phase1.db"
@@ -275,6 +300,123 @@ class Phase1ContractTests(unittest.TestCase):
                         "expected_sources_json",
                     }.issubset(columns)
                 )
+
+    def test_retrieval_experiment_archive_and_export_lifecycle(self) -> None:
+        initialize_database()
+        EvaluationRepository(settings.database_path).create_case(
+            {
+                "topic": "测试用例",
+                "expected_type": "ANSWER",
+                "turns": ["测试问题"],
+                "expected_points": ["测试要点"],
+                "expected_sources": [],
+                "should_show_compliance": False,
+            }
+        )
+        repository = RetrievalExperimentRepository(settings.database_path)
+        experiment = repository.create_experiment(
+            "批次 A",
+            1,
+            {
+                "answer_style": "plain",
+                "case_scope": "SELECTED",
+                "case_ids": [1],
+                "case_snapshots": [],
+                "configs": [
+                    {
+                        "chunk_size": 600,
+                        "chunk_overlap": 100,
+                        "top_k": 5,
+                        "rerank_enabled": False,
+                        "rerank_top_n": 5,
+                        "score_threshold": 0.35,
+                    }
+                ],
+                "embedding_signature": {
+                    "embedding_provider": "local",
+                    "embedding_model": "test",
+                    "embedding_dimension": 3,
+                    "normalize_embeddings": True,
+                },
+            },
+        )
+        repository.add_result(
+            experiment["id"],
+            {
+                "config_index": 0,
+                "case_id": 1,
+                "status": "COMPLETED",
+                "retrieved_sources": [{"file_name": "劳动法.docx"}],
+                "source_hit": True,
+                "correct": False,
+                "refused": False,
+                "retrieval_ms": 12,
+                "error_message": None,
+            },
+        )
+        repository.complete_experiment(
+            experiment["id"],
+            0,
+            {
+                "accuracy": 0.0,
+                "reject_rate": None,
+                "citation_hit_rate": 1.0,
+                "avg_retrieval_ms": 12.0,
+            },
+        )
+        service = object.__new__(RetrievalExperimentService)
+        service.repository = repository
+
+        archived = service.archive_experiment(experiment["id"])
+        self.assertTrue(archived["archived_at"])
+        self.assertEqual(
+            repository.list_experiments(page=1, size=10, status=None)[0], []
+        )
+        self.assertEqual(
+            len(
+                repository.list_experiments(
+                    page=1, size=10, status=None, include_archived=True
+                )[0]
+            ),
+            1,
+        )
+        exported = service.export_experiment(experiment["id"])
+        self.assertIn("实验名称", exported)
+        self.assertIn("劳动法.docx", exported)
+
+        restored = service.restore_experiment(experiment["id"])
+        self.assertIsNone(restored["archived_at"])
+
+    def test_retrieval_strategy_version_lifecycle(self) -> None:
+        initialize_database()
+        repository = RetrievalStrategyRepository(settings.database_path)
+        service = object.__new__(RetrievalExperimentService)
+        service.strategy_repository = repository
+        config = ExperimentConfig(
+            chunk_size=600,
+            chunk_overlap=100,
+            top_k=5,
+            rerank_enabled=False,
+            rerank_top_n=5,
+            score_threshold=0.35,
+        )
+        created = service.create_strategy(
+            RetrievalStrategyCreate(name="版本策略", description="初始", config=config)
+        )
+        self.assertEqual(created["version"], 1)
+        updated = service.update_strategy(
+            created["id"],
+            RetrievalStrategyUpdate(name="版本策略 v2", description="修改后", config=config),
+        )
+        self.assertEqual(updated["version"], 2)
+        self.assertEqual(
+            [item["version"] for item in service.list_strategy_versions(created["id"])],
+            [2, 1],
+        )
+        restored = service.restore_strategy_version(created["id"], 1)
+        self.assertEqual(restored["version"], 3)
+        self.assertEqual(restored["name"], "版本策略")
+        self.assertEqual(restored["description"], "初始")
 
 
 if __name__ == "__main__":

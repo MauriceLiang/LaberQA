@@ -143,25 +143,51 @@ input {
 }
 
 /* Keep unscoped Element Plus components consistent with the application palette. */
-.el-button:not(.is-link):not(.is-text) {
+.el-button:where(:not(.is-link):not(.is-text)) {
   border-radius: 8px;
   font-weight: 600;
 }
 
-.el-button--primary:not(.is-disabled):not(.is-text):not(.is-link):not(.new-session-button) {
+.el-button--primary:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain):not(.new-session-button)) {
   color: #fff;
   background: #126047;
   border-color: #126047;
   box-shadow: 0 5px 12px rgb(18 96 71 / 12%);
 }
 
-.el-button--primary:not(.is-disabled):not(.is-text):not(.is-link):not(.new-session-button):hover,
-.el-button--primary:not(.is-disabled):not(.is-text):not(.is-link):not(.new-session-button):focus,
-.el-button--primary:not(.is-disabled):not(.is-text):not(.is-link):not(.new-session-button):active {
+.el-button--primary:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain):not(.new-session-button)):hover,
+.el-button--primary:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain):not(.new-session-button)):focus,
+.el-button--primary:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain):not(.new-session-button)):active {
   color: #fff;
   background: #0f523c;
   border-color: #0f523c;
   box-shadow: 0 6px 14px rgb(18 96 71 / 18%);
+}
+
+.el-button--primary.is-plain:where(:not(.is-disabled)) {
+  color: #126047;
+  background: #eff7f2;
+  border-color: #a9c8b9;
+  box-shadow: none;
+}
+
+.el-button--primary.is-plain:where(:not(.is-disabled)):hover,
+.el-button--primary.is-plain:where(:not(.is-disabled)):focus,
+.el-button--primary.is-plain:where(:not(.is-disabled)):active {
+  color: #0f523c;
+  background: #e4f2ea;
+  border-color: #8fc0ab;
+  box-shadow: 0 4px 10px rgb(18 96 71 / 10%);
+}
+
+.el-button--primary.is-plain.is-disabled,
+.el-button--primary.is-plain.is-disabled:hover,
+.el-button--primary.is-plain.is-disabled:focus,
+.el-button--primary.is-plain.is-disabled:active {
+  color: #9bb4a7;
+  background: #f3f7f5;
+  border-color: #dbe7e0;
+  box-shadow: none;
 }
 
 .el-button--primary.is-text,
@@ -181,14 +207,14 @@ input {
   box-shadow: none;
 }
 
-.el-button--danger:not(.is-disabled):not(.is-text):not(.is-link) {
+.el-button--danger:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain)) {
   color: #a24d4d;
   border-color: #edcfca;
 }
 
-.el-button--danger:not(.is-disabled):not(.is-text):not(.is-link):hover,
-.el-button--danger:not(.is-disabled):not(.is-text):not(.is-link):focus,
-.el-button--danger:not(.is-disabled):not(.is-text):not(.is-link):active {
+.el-button--danger:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain)):hover,
+.el-button--danger:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain)):focus,
+.el-button--danger:where(:not(.is-disabled):not(.is-text):not(.is-link):not(.is-plain)):active {
   color: #823737;
   background: #fff5f3;
   border-color: #dca7a1;
@@ -211,14 +237,14 @@ input {
   box-shadow: none;
 }
 
-.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text) {
+.el-button:where(:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text)) {
   color: #44545d;
   background: #fff;
   border-color: #d8e1dc;
 }
 
-.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text):hover,
-.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text):focus {
+.el-button:where(:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text)):hover,
+.el-button:where(:not(.el-button--primary):not(.el-button--danger):not(.is-disabled):not(.is-link):not(.is-text)):focus {
   color: #185b44;
   background: #f4faf6;
   border-color: #9fc4af;

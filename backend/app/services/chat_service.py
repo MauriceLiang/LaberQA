@@ -370,6 +370,9 @@ class ChatService:
         return {
             "answer": answer,
             "refused": refused,
+            # Keep the pre-gate candidates available to diagnostics. Production
+            # callers still use `citations`, which remains empty on refusal.
+            "retrieved_sources": evidence,
             "citations": [] if refused else evidence,
             "rewritten_question": rewritten_question,
             "retrieval_ms": retrieval_ms,

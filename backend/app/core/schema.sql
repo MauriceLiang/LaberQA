@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS retrieval_experiment (
     reject_rate REAL CHECK (reject_rate IS NULL OR (reject_rate >= 0 AND reject_rate <= 1)),
     citation_hit_rate REAL CHECK (citation_hit_rate IS NULL OR (citation_hit_rate >= 0 AND citation_hit_rate <= 1)),
     avg_retrieval_ms REAL CHECK (avg_retrieval_ms IS NULL OR avg_retrieval_ms >= 0),
+    archived_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -176,6 +177,31 @@ CREATE TABLE IF NOT EXISTS retrieval_experiment_result (
     UNIQUE (experiment_id, config_index, case_id)
 );
 
+CREATE TABLE IF NOT EXISTS retrieval_strategy (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(255) NOT NULL DEFAULT '',
+    builtin_key VARCHAR(100),
+    config_json TEXT NOT NULL,
+    is_builtin INTEGER NOT NULL DEFAULT 0 CHECK (is_builtin IN (0, 1)),
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    archived_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS retrieval_strategy_version (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id INTEGER NOT NULL REFERENCES retrieval_strategy(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(255) NOT NULL DEFAULT '',
+    config_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (strategy_id, version)
+);
+
 CREATE INDEX IF NOT EXISTS idx_document_status_created_at ON document(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_chunk_document_id ON chunk(document_id);
 CREATE INDEX IF NOT EXISTS idx_message_session_created_at ON message(session_id, created_at);
@@ -187,3 +213,7 @@ CREATE INDEX IF NOT EXISTS idx_missing_knowledge_last_seen_at ON missing_knowled
 CREATE INDEX IF NOT EXISTS idx_retrieval_experiment_status_created_at ON retrieval_experiment(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_retrieval_experiment_result_experiment_id
     ON retrieval_experiment_result(experiment_id, config_index);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_retrieval_strategy_builtin_key
+    ON retrieval_strategy(builtin_key) WHERE builtin_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_retrieval_strategy_updated_at
+    ON retrieval_strategy(updated_at DESC, id DESC);

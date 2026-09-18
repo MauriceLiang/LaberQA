@@ -13,11 +13,20 @@ from app.repositories.evaluation_repository import EvaluationRepository
 from app.repositories.retrieval_experiment_repository import (
     RetrievalExperimentRepository,
 )
+from app.repositories.retrieval_strategy_repository import (
+    RetrievalStrategyRepository,
+)
 from app.schemas.contracts import (
     AnswerStyle,
     EmbeddingSignature,
+    EvaluationCaseOrigin,
+    EvaluationCaseScope,
+    EvaluationCaseStatus,
     ExperimentConfig,
     ExperimentCreate,
+    RetrievalPreviewRequest,
+    RetrievalStrategyCreate,
+    RetrievalStrategyUpdate,
 )
 from app.services.chat_service import ChatService
 from app.services.document_parser import ParserFactory
@@ -63,6 +72,7 @@ class RetrievalExperimentService:
         document_repository: DocumentRepository | None = None,
         evaluation_repository: EvaluationRepository | None = None,
         repository: RetrievalExperimentRepository | None = None,
+        strategy_repository: RetrievalStrategyRepository | None = None,
         embedding_service: EmbeddingService | None = None,
         parser: type[ParserFactory] = ParserFactory,
         evaluation_service: EvaluationService | None = None,
@@ -80,6 +90,9 @@ class RetrievalExperimentService:
         self.repository = repository or RetrievalExperimentRepository(
             config.database_path
         )
+        self.strategy_repository = strategy_repository or RetrievalStrategyRepository(
+            config.database_path
+        )
         self.embedding_service = embedding_service or (
             chat_service.retrieval_service.embedding_service
         )
@@ -88,10 +101,412 @@ class RetrievalExperimentService:
 
     def initialize(self) -> None:
         self.repository.recover_interrupted_experiments()
+        self.strategy_repository.seed_builtins(_builtin_strategies())
+
+    def list_strategies(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+        return self.strategy_repository.list_strategies(
+            include_archived=include_archived
+        )
+
+    def create_strategy(self, payload: RetrievalStrategyCreate) -> dict[str, Any]:
+        return self.strategy_repository.create_strategy(
+            payload.name,
+            payload.description,
+            payload.config.model_dump(mode="json"),
+        )
+
+    def update_strategy(
+        self, strategy_id: int, payload: RetrievalStrategyUpdate
+    ) -> dict[str, Any]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略不可直接修改，请先复制后编辑",
+                http_status=409,
+            )
+        updated = self.strategy_repository.update_strategy(
+            strategy_id,
+            payload.name,
+            payload.description,
+            payload.config.model_dump(mode="json"),
+        )
+        if updated is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        return updated
+
+    def list_strategy_versions(self, strategy_id: int) -> list[dict[str, Any]]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        return self.strategy_repository.list_versions(strategy_id)
+
+    def restore_strategy_version(
+        self, strategy_id: int, version: int
+    ) -> dict[str, Any]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略不可恢复历史版本",
+                http_status=409,
+            )
+        restored = self.strategy_repository.restore_version(strategy_id, version)
+        if restored is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "策略版本不存在",
+                http_status=404,
+            )
+        return restored
+
+    def set_strategy_active(
+        self, strategy_id: int, active: bool
+    ) -> dict[str, Any]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略始终启用，不支持停用",
+                http_status=409,
+            )
+        if current["archived_at"] is not None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "已归档策略请先恢复后再启用",
+                http_status=409,
+            )
+        updated = self.strategy_repository.set_active(strategy_id, active)
+        if updated is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        return updated
+
+    def archive_strategy(self, strategy_id: int) -> dict[str, Any]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略不可归档",
+                http_status=409,
+            )
+        archived = self.strategy_repository.archive_strategy(strategy_id)
+        if archived is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "检索策略已经归档",
+                http_status=409,
+            )
+        return archived
+
+    def restore_strategy(self, strategy_id: int) -> dict[str, Any]:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略不需要恢复",
+                http_status=409,
+            )
+        restored = self.strategy_repository.restore_strategy(strategy_id)
+        if restored is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "检索策略未处于归档状态",
+                http_status=409,
+            )
+        return restored
+
+    def delete_strategy(self, strategy_id: int) -> None:
+        current = self.strategy_repository.get_strategy(strategy_id)
+        if current is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if current["is_builtin"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "内置检索策略不可删除",
+                http_status=409,
+            )
+        self.strategy_repository.delete_strategy(strategy_id)
+
+    def archive_experiment(self, experiment_id: int) -> dict[str, Any]:
+        experiment = self.repository.get_experiment(experiment_id)
+        if experiment is None:
+            raise AppError(
+                ErrorCode.EXPERIMENT_NOT_FOUND,
+                "检索实验不存在",
+                http_status=404,
+            )
+        if experiment["status"] in ("PENDING", "RUNNING"):
+            raise AppError(
+                ErrorCode.JOB_ALREADY_RUNNING,
+                "实验运行中，完成后才能归档",
+                http_status=409,
+            )
+        archived = self.repository.archive_experiment(experiment_id)
+        if archived is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "实验已经归档",
+                http_status=409,
+            )
+        return archived
+
+    def restore_experiment(self, experiment_id: int) -> dict[str, Any]:
+        experiment = self.repository.get_experiment(experiment_id)
+        if experiment is None:
+            raise AppError(
+                ErrorCode.EXPERIMENT_NOT_FOUND,
+                "检索实验不存在",
+                http_status=404,
+            )
+        restored = self.repository.restore_experiment(experiment_id)
+        if restored is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "实验未处于归档状态",
+                http_status=409,
+            )
+        return restored
+
+    def delete_experiment(self, experiment_id: int) -> None:
+        experiment = self.repository.get_experiment(experiment_id)
+        if experiment is None:
+            raise AppError(
+                ErrorCode.EXPERIMENT_NOT_FOUND,
+                "检索实验不存在",
+                http_status=404,
+            )
+        if experiment["status"] in ("PENDING", "RUNNING"):
+            raise AppError(
+                ErrorCode.JOB_ALREADY_RUNNING,
+                "实验运行中，完成后才能删除",
+                http_status=409,
+            )
+        self.repository.delete_experiment(experiment_id)
+        experiment_dir = (
+            self.config.faiss_path / "experiments" / f"experiment_{experiment_id}"
+        )
+        try:
+            import shutil
+
+            shutil.rmtree(experiment_dir, ignore_errors=True)
+        except OSError:
+            logger.warning(
+                "Could not remove retrieval experiment index directory %s",
+                experiment_dir,
+                exc_info=True,
+            )
+
+    def copy_experiment(self, experiment_id: int, name: str) -> dict[str, Any]:
+        experiment = self.repository.get_experiment(experiment_id)
+        if experiment is None:
+            raise AppError(
+                ErrorCode.EXPERIMENT_NOT_FOUND,
+                "检索实验不存在",
+                http_status=404,
+            )
+        snapshot = experiment["snapshot"]
+        case_count = len(snapshot.get("case_snapshots", [])) or int(
+            experiment.get("case_count", 0)
+        )
+        if case_count <= 0:
+            raise AppError(ErrorCode.INVALID_REQUEST, "实验没有可复制的评测用例", 400)
+        return self.repository.create_experiment(name, case_count, snapshot)
+
+    async def preview(self, payload: RetrievalPreviewRequest) -> dict[str, Any]:
+        """Run one question through the current production index with a draft config."""
+
+        if not self.document_repository.list_success_documents():
+            raise AppError(
+                ErrorCode.KNOWLEDGE_BASE_NOT_READY,
+                "没有可用于试跑的成功资料",
+                http_status=503,
+            )
+        runtime_config = _runtime_config(self.config, payload.config)
+        retrieval_service = RetrievalService(
+            runtime_config,
+            repository=self.document_repository,
+            embedding_service=self.embedding_service,
+            vector_store=self.production_vector_store,
+            rerank_service=RerankService(runtime_config),
+        )
+        variant_chat = ChatService(
+            self.chat_service.session_service,
+            retrieval_service,
+            runtime_config,
+            llm_client=self.chat_service.llm_client,
+            missing_knowledge_service=self.chat_service.missing_knowledge_service,
+        )
+        try:
+            output = await variant_chat.answer_once(
+                payload.question,
+                [],
+                payload.answer_style,
+                mode=ExecutionMode.EXPERIMENT,
+            )
+        except ModelUnavailableError as exc:
+            raise AppError(
+                ErrorCode.MODEL_UNAVAILABLE,
+                "模型暂不可用，暂时无法完成试跑",
+                http_status=503,
+            ) from exc
+        except EmbeddingUnavailableError as exc:
+            raise AppError(
+                ErrorCode.EMBEDDING_UNAVAILABLE,
+                "向量服务暂不可用，暂时无法完成试跑",
+                http_status=503,
+            ) from exc
+        except (
+            VectorStoreNotInitialized,
+            VectorStorePersistenceError,
+            VectorStoreSignatureMismatch,
+        ) as exc:
+            raise AppError(
+                ErrorCode.KNOWLEDGE_BASE_NOT_READY,
+                "生产索引尚未就绪，暂时无法完成试跑",
+                http_status=503,
+            ) from exc
+
+        retrieved_sources = output.get("retrieved_sources", [])
+        refused = bool(output["refused"])
+        max_retrieval_score = max(
+            (float(item["retrieval_score"]) for item in retrieved_sources),
+            default=0.0,
+        )
+        score_summary = "；".join(
+            f"#{int(item['rank_no'])} {item['file_name']} "
+            f"检索分 {float(item['retrieval_score']):.3f}"
+            for item in retrieved_sources
+        ) or "没有候选片段"
+        return {
+            "question": payload.question,
+            "rewritten_question": output["rewritten_question"],
+            "answer": output["answer"],
+            "refused": refused,
+            "retrieval_ms": output["retrieval_ms"],
+            "retrieved_sources": retrieved_sources,
+            "citations": output["citations"],
+            "config": payload.config.model_dump(mode="json"),
+            "trace": [
+                {
+                    "stage": "文本分块",
+                    "status": "completed",
+                    "detail": "试跑复用生产索引；批量实验会按策略重新分块",
+                    "duration_ms": None,
+                },
+                {
+                    "stage": "初步召回",
+                    "status": "completed" if retrieved_sources else "skipped",
+                    "detail": f"召回 {len(retrieved_sources)} 个候选片段（Top-k {payload.config.top_k}）",
+                    "duration_ms": output["retrieval_ms"],
+                },
+                {
+                    "stage": "重排",
+                    "status": "completed" if payload.config.rerank_enabled else "skipped",
+                    "detail": (
+                        f"已保留重排后的前 {payload.config.rerank_top_n} 个片段"
+                        if payload.config.rerank_enabled
+                        else "当前策略未启用重排"
+                    ),
+                    "duration_ms": None,
+                },
+                {
+                    "stage": "阈值过滤",
+                    "status": "completed" if retrieved_sources else "skipped",
+                    "detail": (
+                        f"候选分数：{score_summary}；最高分 {max_retrieval_score:.3f}，"
+                        f"当前阈值 {payload.config.score_threshold:.2f}；"
+                        + (
+                            "最高分达到门控阈值，交由证据判断"
+                            if not refused
+                            else "最高分未达到门控阈值或证据判断不足，建议拒答"
+                        )
+                    ),
+                    "duration_ms": None,
+                },
+                {
+                    "stage": "最终上下文",
+                    "status": "completed" if not refused and retrieved_sources else "skipped",
+                    "detail": (
+                        f"回答生成使用 {len(retrieved_sources)} 个候选片段"
+                        if not refused and retrieved_sources
+                        else "拒答时不会把候选片段交给答案生成"
+                    ),
+                    "duration_ms": None,
+                },
+                {
+                    "stage": "答案生成",
+                    "status": "completed",
+                    "detail": "已生成本次试跑回答",
+                    "duration_ms": None,
+                },
+            ],
+        }
 
     def create_experiment(self, payload: ExperimentCreate) -> dict[str, Any]:
-        cases = self.evaluation_service.repository.get_cases(payload.case_ids)
-        if payload.case_ids is not None and len(cases) != len(payload.case_ids):
+        if payload.case_scope is EvaluationCaseScope.BUILTIN_BASELINE:
+            cases, _ = self.evaluation_service.repository.list_cases(
+                page=1,
+                size=100,
+                topic=None,
+                expected_type=None,
+                is_multi_turn=None,
+                origin=EvaluationCaseOrigin.BUILTIN.value,
+                status=EvaluationCaseStatus.ACTIVE.value,
+                include_archived=False,
+            )
+        elif payload.case_scope is EvaluationCaseScope.ALL_ACTIVE:
+            cases = self.evaluation_service.repository.get_cases()
+        else:
+            cases = self.evaluation_service.repository.get_cases(payload.case_ids)
+        if payload.case_scope is EvaluationCaseScope.SELECTED and (
+            payload.case_ids is None or len(cases) != len(payload.case_ids)
+        ):
             raise AppError(
                 ErrorCode.INVALID_REQUEST,
                 "评测用例不存在",
@@ -109,6 +524,7 @@ class RetrievalExperimentService:
         signature = self._embedding_signature()
         snapshot = {
             "answer_style": payload.answer_style.value,
+            "case_scope": payload.case_scope.value,
             "case_ids": [case["id"] for case in cases],
             "case_snapshots": [
                 {
@@ -124,6 +540,8 @@ class RetrievalExperimentService:
                 for case in cases
             ],
             "configs": [config.model_dump(mode="json") for config in payload.configs],
+            "config_names": payload.config_names
+            or [f"配置 {index + 1}" for index in range(len(payload.configs))],
             "embedding_signature": signature.model_dump(mode="json"),
         }
         return self.repository.create_experiment(
@@ -133,9 +551,68 @@ class RetrievalExperimentService:
         )
 
     def list_experiments(
-        self, *, page: int, size: int, status: str | None
+        self,
+        *,
+        page: int,
+        size: int,
+        status: str | None,
+        include_archived: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
-        return self.repository.list_experiments(page=page, size=size, status=status)
+        return self.repository.list_experiments(
+            page=page,
+            size=size,
+            status=status,
+            include_archived=include_archived,
+        )
+
+    def export_experiment(self, experiment_id: int) -> str:
+        import csv
+        import io
+
+        experiment = self.repository.get_experiment(experiment_id)
+        if experiment is None:
+            raise AppError(
+                ErrorCode.EXPERIMENT_NOT_FOUND,
+                "检索实验不存在",
+                http_status=404,
+            )
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(
+            [
+                "实验名称",
+                "配置序号",
+                "用例 ID",
+                "状态",
+                "引用命中",
+                "回答正确",
+                "拒答",
+                "检索耗时(ms)",
+                "引用文件",
+            ]
+        )
+        for result in experiment["results"]:
+            source_files = "、".join(
+                dict.fromkeys(
+                    str(source.get("file_name", ""))
+                    for source in result["retrieved_sources"]
+                    if source.get("file_name")
+                )
+            )
+            writer.writerow(
+                [
+                    experiment["name"],
+                    result["config_index"] + 1,
+                    result["case_id"],
+                    result["status"],
+                    _export_bool(result["source_hit"]),
+                    _export_bool(result["correct"]),
+                    _export_bool(result["refused"]),
+                    result["retrieval_ms"] if result["retrieval_ms"] is not None else "",
+                    source_files,
+                ]
+            )
+        return output.getvalue()
 
     def get_experiment(self, experiment_id: int) -> dict[str, Any]:
         experiment = self.repository.get_experiment(experiment_id)
@@ -156,6 +633,7 @@ class RetrievalExperimentService:
         return {
             **experiment,
             "embedding_signature": experiment["snapshot"]["embedding_signature"],
+            "config_names": experiment["snapshot"].get("config_names", []),
             "config_results": config_results,
         }
 
@@ -441,6 +919,89 @@ class RetrievalExperimentService:
         return str(exc)[:500] or "检索实验失败"
 
 
+def _builtin_strategies() -> list[dict[str, Any]]:
+    return [
+        {
+            "builtin_key": "baseline_a",
+            "name": "基线 A · 平衡",
+            "description": "默认分块与召回数量，适合作为起点。",
+            "config": {
+                "chunk_size": 600,
+                "chunk_overlap": 100,
+                "top_k": 5,
+                "rerank_enabled": False,
+                "rerank_top_n": 5,
+                "score_threshold": 0.35,
+            },
+        },
+        {
+            "builtin_key": "baseline_b",
+            "name": "基线 B · 小分块",
+            "description": "增加分块粒度，适合短条款和精确定位。",
+            "config": {
+                "chunk_size": 400,
+                "chunk_overlap": 100,
+                "top_k": 5,
+                "rerank_enabled": False,
+                "rerank_top_n": 5,
+                "score_threshold": 0.35,
+            },
+        },
+        {
+            "builtin_key": "baseline_c",
+            "name": "基线 C · 大分块",
+            "description": "保留更完整的上下文，适合跨段落问题。",
+            "config": {
+                "chunk_size": 800,
+                "chunk_overlap": 100,
+                "top_k": 5,
+                "rerank_enabled": False,
+                "rerank_top_n": 5,
+                "score_threshold": 0.35,
+            },
+        },
+        {
+            "builtin_key": "baseline_d",
+            "name": "基线 D · 快速",
+            "description": "减少召回数量，优先控制响应耗时。",
+            "config": {
+                "chunk_size": 600,
+                "chunk_overlap": 100,
+                "top_k": 3,
+                "rerank_enabled": False,
+                "rerank_top_n": 3,
+                "score_threshold": 0.35,
+            },
+        },
+        {
+            "builtin_key": "baseline_e",
+            "name": "基线 E · 高召回",
+            "description": "扩大候选范围，适合资料分散的问题。",
+            "config": {
+                "chunk_size": 600,
+                "chunk_overlap": 100,
+                "top_k": 8,
+                "rerank_enabled": False,
+                "rerank_top_n": 8,
+                "score_threshold": 0.35,
+            },
+        },
+        {
+            "builtin_key": "baseline_f",
+            "name": "基线 F · 重排",
+            "description": "对候选片段进行重排，优先提升相关性。",
+            "config": {
+                "chunk_size": 600,
+                "chunk_overlap": 100,
+                "top_k": 5,
+                "rerank_enabled": True,
+                "rerank_top_n": 5,
+                "score_threshold": 0.35,
+            },
+        },
+    ]
+
+
 def _runtime_config(config: Settings, experiment: ExperimentConfig) -> Settings:
     return config.model_copy(
         update={
@@ -545,6 +1106,12 @@ def _calculate_config_results(
 
 def _rate(successes: int, total: int) -> float | None:
     return successes / total if total else None
+
+
+def _export_bool(value: bool | None) -> str:
+    if value is None:
+        return ""
+    return "是" if value else "否"
 
 
 def _best_config(
