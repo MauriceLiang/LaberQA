@@ -1080,6 +1080,12 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+/* Keep the section action aligned with the filter submit action at every breakpoint. */
+.evaluation-section-heading .evaluation-primary {
+  width: 90px;
+  min-width: 90px;
+}
+
 .evaluation-primary:hover:not(:disabled) {
   background: #0f523c;
   border-color: #0f523c;
@@ -1871,6 +1877,11 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .evaluation-section-heading .evaluation-primary {
+    width: 100px;
+    min-width: 100px;
+  }
+
   .evaluation-filters .evaluation-primary {
     grid-column: 1 / -1;
     justify-self: end;
@@ -1943,6 +1954,16 @@ onBeforeUnmount(() => {
   .evaluation-filters,
   .evaluation-create-form {
     grid-template-columns: 1fr;
+  }
+
+  .evaluation-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .evaluation-section-heading .evaluation-primary {
+    width: 100%;
+    min-width: 0;
   }
 
   .evaluation-filters .evaluation-primary {
