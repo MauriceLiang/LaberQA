@@ -185,11 +185,31 @@ export interface paths {
         /** List evaluation cases */
         get: operations["list_evaluation_cases_api_evaluations_cases_get"];
         put?: never;
-        post?: never;
+        /** Create a custom evaluation case */
+        post: operations["create_evaluation_case_api_evaluations_cases_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/evaluations/cases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an evaluation case */
+        get: operations["get_evaluation_case_api_evaluations_cases__id__get"];
+        put?: never;
+        post?: never;
+        /** Archive a custom evaluation case */
+        delete: operations["delete_evaluation_case_api_evaluations_cases__id__delete"];
+        options?: never;
+        head?: never;
+        /** Update a custom evaluation case */
+        patch: operations["update_evaluation_case_api_evaluations_cases__id__patch"];
         trace?: never;
     };
     "/api/evaluations/runs": {
@@ -221,7 +241,8 @@ export interface paths {
         get: operations["get_evaluation_run_api_evaluations_runs__id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a completed or failed evaluation run */
+        delete: operations["delete_evaluation_run_api_evaluations_runs__id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -328,6 +349,14 @@ export interface components {
             /** Message */
             message: string;
             data: components["schemas"]["DocumentUploadAccepted"] | null;
+        };
+        /** ApiResponse[EvaluationCase] */
+        ApiResponse_EvaluationCase_: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            data: components["schemas"]["EvaluationCase"] | null;
         };
         /** ApiResponse[EvaluationRunDetail] */
         ApiResponse_EvaluationRunDetail_: {
@@ -591,6 +620,41 @@ export interface components {
             expected_sources: components["schemas"]["ExpectedSource"][];
             /** Should Show Compliance */
             should_show_compliance: boolean;
+            origin: components["schemas"]["EvaluationCaseOrigin"];
+            status: components["schemas"]["EvaluationCaseStatus"];
+            /** Version */
+            version: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Archived At */
+            archived_at: string | null;
+        };
+        /** EvaluationCaseCreate */
+        EvaluationCaseCreate: {
+            topic: string;
+            expected_type: components["schemas"]["EvaluationExpectedType"];
+            turns: string[];
+            expected_points?: string[];
+            expected_sources?: components["schemas"]["ExpectedSource"][];
+            should_show_compliance: boolean;
+        };
+        /** EvaluationCaseOrigin */
+        EvaluationCaseOrigin: "BUILTIN" | "CUSTOM";
+        /** EvaluationCaseScope */
+        EvaluationCaseScope: "BUILTIN_BASELINE" | "ALL_ACTIVE" | "SELECTED";
+        /** EvaluationCaseStatus */
+        EvaluationCaseStatus: "ACTIVE" | "ARCHIVED";
+        /** EvaluationCaseUpdate */
+        EvaluationCaseUpdate: {
+            topic: string;
+            expected_type: components["schemas"]["EvaluationExpectedType"];
+            turns: string[];
+            expected_points?: string[];
+            expected_sources?: components["schemas"]["ExpectedSource"][];
+            should_show_compliance: boolean;
+            version: number;
         };
         /**
          * EvaluationExpectedType
@@ -641,6 +705,8 @@ export interface components {
         /** EvaluationRunConfig */
         EvaluationRunConfig: {
             answer_style: components["schemas"]["AnswerStyle"];
+            /** @default BUILTIN_BASELINE */
+            case_scope: components["schemas"]["EvaluationCaseScope"];
             /** Llm Model */
             llm_model: string;
             /** Evaluator Model */
@@ -676,6 +742,7 @@ export interface components {
             /** Case Ids */
             case_ids?: number[] | null;
             answer_style: components["schemas"]["AnswerStyle"];
+            case_scope?: components["schemas"]["EvaluationCaseScope"] | null;
         };
         /** EvaluationRunDetail */
         EvaluationRunDetail: {
@@ -1998,6 +2065,9 @@ export interface operations {
                 topic?: string | null;
                 expected_type?: components["schemas"]["EvaluationExpectedType"] | null;
                 is_multi_turn?: boolean | null;
+                origin?: components["schemas"]["EvaluationCaseOrigin"] | null;
+                status?: components["schemas"]["EvaluationCaseStatus"] | null;
+                include_archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -2075,6 +2145,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    create_evaluation_case_api_evaluations_cases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationCaseCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
+                };
+            };
+        };
+    };
+    get_evaluation_case_api_evaluations_cases__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: { id: number };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
+                };
+            };
+        };
+    };
+    delete_evaluation_case_api_evaluations_cases__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: { id: number };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    update_evaluation_case_api_evaluations_cases__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: { id: number };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationCaseUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: { [name: string]: unknown };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
                 };
             };
         };
@@ -2271,6 +2417,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_EvaluationRunDetail_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    delete_evaluation_run_api_evaluations_runs__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
             /** @description Invalid business request */

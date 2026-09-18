@@ -30,12 +30,15 @@ from app.schemas.contracts import (
     DocumentReimportAccepted,
     DocumentUploadAccepted,
     EvaluationCase,
+    EvaluationCaseCreate,
     EvaluationCaseQuery,
+    EvaluationCaseUpdate,
     EvaluationRunCreate,
     EvaluationRunDetail,
     EvaluationRunJob,
     EvaluationRunQuery,
     EvaluationRunSummary,
+    ExperimentCopy,
     ExperimentCreate,
     ExperimentDetail,
     ExperimentJob,
@@ -47,6 +50,13 @@ from app.schemas.contracts import (
     MissingKnowledgeItem,
     MissingKnowledgeQuery,
     MissingKnowledgeUpdate,
+    RetrievalPreviewRequest,
+    RetrievalPreviewResponse,
+    RetrievalStrategy,
+    RetrievalStrategyCreate,
+    RetrievalStrategyStatusUpdate,
+    RetrievalStrategyUpdate,
+    RetrievalStrategyVersion,
     SessionItem,
     ToolExecutionItem,
 )
@@ -361,6 +371,9 @@ def list_evaluation_cases(
         topic=query.topic,
         expected_type=query.expected_type.value if query.expected_type else None,
         is_multi_turn=query.is_multi_turn,
+        origin=query.origin.value if query.origin else None,
+        status=query.status.value if query.status else None,
+        include_archived=query.include_archived,
     )
     return ApiResponse(
         code=0,
@@ -373,6 +386,79 @@ def list_evaluation_cases(
             pages=(total + query.size - 1) // query.size,
         ),
     )
+
+
+@router.post(
+    "/evaluations/cases",
+    response_model=ApiResponse[EvaluationCase],
+    status_code=201,
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Create a custom evaluation case",
+)
+def create_evaluation_case(
+    payload: EvaluationCaseCreate,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="created",
+        data=EvaluationCase.model_validate(service.create_case(payload)),
+    )
+
+
+@router.get(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[EvaluationCase],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Get an evaluation case",
+)
+def get_evaluation_case(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=EvaluationCase.model_validate(
+            service.get_case(id, include_archived=True)
+        ),
+    )
+
+
+@router.patch(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[EvaluationCase],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Update a custom evaluation case",
+)
+def update_evaluation_case(
+    id: int,
+    payload: EvaluationCaseUpdate,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[EvaluationCase]:
+    return ApiResponse(
+        code=0,
+        message="updated",
+        data=EvaluationCase.model_validate(service.update_case(id, payload)),
+    )
+
+
+@router.delete(
+    "/evaluations/cases/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Archive a custom evaluation case",
+)
+def delete_evaluation_case(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[None]:
+    service.archive_case(id)
+    return ApiResponse(code=0, message="deleted", data=None)
 
 
 @router.post(
@@ -452,6 +538,21 @@ def get_evaluation_run(
     )
 
 
+@router.delete(
+    "/evaluations/runs/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["evaluations"],
+    summary="Delete a completed or failed evaluation run",
+)
+def delete_evaluation_run(
+    id: int,
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+) -> ApiResponse[None]:
+    service.delete_run(id)
+    return ApiResponse(code=0, message="deleted", data=None)
+
+
 @router.get(
     "/missing-knowledge",
     response_model=ApiResponse[PageResult[MissingKnowledgeItem]],
@@ -505,6 +606,197 @@ def update_missing_knowledge(
 
 
 @router.get(
+    "/retrieval-strategies",
+    response_model=ApiResponse[list[RetrievalStrategy]],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="List retrieval strategies",
+)
+def list_retrieval_strategies(
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+    include_archived: bool = Query(default=False),
+) -> ApiResponse[list[RetrievalStrategy]]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=[
+            RetrievalStrategy.model_validate(item)
+                for item in service.list_strategies(include_archived=include_archived)
+        ],
+    )
+
+
+@router.post(
+    "/retrieval-strategies",
+    response_model=ApiResponse[RetrievalStrategy],
+    status_code=201,
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Create a retrieval strategy",
+)
+def create_retrieval_strategy(
+    payload: RetrievalStrategyCreate,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="created",
+        data=RetrievalStrategy.model_validate(service.create_strategy(payload)),
+    )
+
+
+@router.patch(
+    "/retrieval-strategies/{id}/status",
+    response_model=ApiResponse[RetrievalStrategy],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Enable or disable a custom retrieval strategy",
+)
+def update_retrieval_strategy_status(
+    id: int,
+    payload: RetrievalStrategyStatusUpdate,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=RetrievalStrategy.model_validate(
+            service.set_strategy_active(id, payload.is_active)
+        ),
+    )
+
+
+@router.get(
+    "/retrieval-strategies/{id}/versions",
+    response_model=ApiResponse[list[RetrievalStrategyVersion]],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="List retrieval strategy versions",
+)
+def list_retrieval_strategy_versions(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[list[RetrievalStrategyVersion]]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=[
+            RetrievalStrategyVersion.model_validate(item)
+            for item in service.list_strategy_versions(id)
+        ],
+    )
+
+
+@router.post(
+    "/retrieval-strategies/{id}/versions/{version}/restore",
+    response_model=ApiResponse[RetrievalStrategy],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Restore a retrieval strategy version",
+)
+def restore_retrieval_strategy_version(
+    id: int,
+    version: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="restored",
+        data=RetrievalStrategy.model_validate(
+            service.restore_strategy_version(id, version)
+        ),
+    )
+
+
+@router.post(
+    "/retrieval-strategies/{id}/archive",
+    response_model=ApiResponse[RetrievalStrategy],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Archive a custom retrieval strategy",
+)
+def archive_retrieval_strategy(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="archived",
+        data=RetrievalStrategy.model_validate(service.archive_strategy(id)),
+    )
+
+
+@router.post(
+    "/retrieval-strategies/{id}/restore",
+    response_model=ApiResponse[RetrievalStrategy],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Restore an archived custom retrieval strategy",
+)
+def restore_retrieval_strategy(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="restored",
+        data=RetrievalStrategy.model_validate(service.restore_strategy(id)),
+    )
+
+
+@router.patch(
+    "/retrieval-strategies/{id}",
+    response_model=ApiResponse[RetrievalStrategy],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Update a custom retrieval strategy",
+)
+def update_retrieval_strategy(
+    id: int,
+    payload: RetrievalStrategyUpdate,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalStrategy]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=RetrievalStrategy.model_validate(service.update_strategy(id, payload)),
+    )
+
+
+@router.delete(
+    "/retrieval-strategies/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Delete a custom retrieval strategy",
+)
+def delete_retrieval_strategy(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[None]:
+    service.delete_strategy(id)
+    return ApiResponse(code=0, message="deleted", data=None)
+
+
+@router.get(
     "/retrieval-experiments",
     response_model=ApiResponse[PageResult[ExperimentSummary]],
     responses=IMPLEMENTED_RESPONSES,
@@ -521,6 +813,7 @@ def list_experiments(
         page=query.page,
         size=query.size,
         status=query.status.value if query.status else None,
+        include_archived=query.include_archived,
     )
     return ApiResponse(
         code=0,
@@ -565,6 +858,118 @@ def create_experiment(
     )
 
 
+@router.post(
+    "/retrieval-experiments/preview",
+    response_model=ApiResponse[RetrievalPreviewResponse],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Preview one retrieval experiment query",
+)
+async def preview_retrieval_experiment(
+    payload: RetrievalPreviewRequest,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[RetrievalPreviewResponse]:
+    result = await service.preview(payload)
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=RetrievalPreviewResponse.model_validate(result),
+    )
+
+
+@router.post(
+    "/retrieval-experiments/{id}/copy",
+    response_model=ApiResponse[ExperimentJob],
+    status_code=202,
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Copy a retrieval experiment",
+)
+def copy_experiment(
+    id: int,
+    payload: ExperimentCopy,
+    background_tasks: BackgroundTasks,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[ExperimentJob]:
+    experiment = service.copy_experiment(id, payload.name)
+    background_tasks.add_task(service.execute_experiment, int(experiment["id"]))
+    return ApiResponse(
+        code=0,
+        message="accepted",
+        data=ExperimentJob(
+            experiment_id=int(experiment["id"]),
+            status=JobStatus.PENDING,
+            progress_current=0,
+            progress_total=int(experiment["progress_total"]),
+            error_message=None,
+        ),
+    )
+
+
+@router.get(
+    "/retrieval-experiments/{id}/export",
+    response_model=ApiResponse[str],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Export retrieval experiment results",
+)
+def export_experiment(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[str]:
+    return ApiResponse(
+        code=0,
+        message="success",
+        data=service.export_experiment(id),
+    )
+
+
+@router.post(
+    "/retrieval-experiments/{id}/archive",
+    response_model=ApiResponse[ExperimentSummary],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Archive a completed retrieval experiment",
+)
+def archive_experiment(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[ExperimentSummary]:
+    return ApiResponse(
+        code=0,
+        message="archived",
+        data=ExperimentSummary.model_validate(service.archive_experiment(id)),
+    )
+
+
+@router.post(
+    "/retrieval-experiments/{id}/restore",
+    response_model=ApiResponse[ExperimentSummary],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Restore an archived retrieval experiment",
+)
+def restore_experiment(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[ExperimentSummary]:
+    return ApiResponse(
+        code=0,
+        message="restored",
+        data=ExperimentSummary.model_validate(service.restore_experiment(id)),
+    )
+
+
 @router.get(
     "/retrieval-experiments/{id}",
     response_model=ApiResponse[ExperimentDetail],
@@ -585,3 +990,20 @@ def get_experiment(
             _schema_fields(ExperimentDetail, service.get_experiment(id))
         ),
     )
+
+
+@router.delete(
+    "/retrieval-experiments/{id}",
+    response_model=ApiResponse[None],
+    responses=IMPLEMENTED_RESPONSES,
+    tags=["retrieval-experiments"],
+    summary="Delete a completed retrieval experiment",
+)
+def delete_experiment(
+    id: int,
+    service: Annotated[
+        RetrievalExperimentService, Depends(get_retrieval_experiment_service)
+    ],
+) -> ApiResponse[None]:
+    service.delete_experiment(id)
+    return ApiResponse(code=0, message="deleted", data=None)

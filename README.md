@@ -32,6 +32,7 @@ flowchart LR
 | --- | --- |
 | 前端 | Vue 3、TypeScript、Vite、Element Plus、Pinia |
 | 后端 | Python 3.11+、FastAPI、Pydantic |
+| RAG 编排 | langchain==1.4.1（核心接口从 `langchain_core` 导入） |
 | 关系数据与文件 | SQLite、本地文件存储 |
 | 向量检索 | FAISS |
 | 文本向量化 | 本地 `BAAI/bge-small-zh-v1.5`（默认），或 OpenAI-compatible Embedding API |
@@ -101,7 +102,7 @@ npm run dev
 
 ## 首次使用
 
-项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
+项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 `langchain` 提供的 `langchain_core` Retriever、Prompt 和 Runnable 编排，底层继续使用项目自己的 SQLite 元数据、FAISS 索引和 OpenAI-compatible LLM 客户端。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
 
 后端启动时会自动初始化 SQLite 数据库，无需手动执行 SQL。默认数据位置如下：
 

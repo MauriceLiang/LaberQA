@@ -3,12 +3,17 @@ import { ElInput } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as experimentsApi from '@/api/experiments'
+import * as evaluationsApi from '@/api/evaluations'
 import RetrievalExperimentView from '@/views/RetrievalExperimentView.vue'
 
 vi.mock('@/api/experiments', () => ({
   createExperiment: vi.fn(),
   getExperiment: vi.fn(),
   getExperiments: vi.fn(),
+}))
+
+vi.mock('@/api/evaluations', () => ({
+  getEvaluationCases: vi.fn(),
 }))
 
 function summary(status: experimentsApi.ExperimentSummary['status'] = 'RUNNING'): experimentsApi.ExperimentSummary {
@@ -87,6 +92,9 @@ beforeEach(() => {
     progress_total: 360,
     error_message: null,
   })
+  vi.mocked(evaluationsApi.getEvaluationCases).mockResolvedValue({
+    items: [], page: 1, size: 100, total: 0, pages: 0,
+  })
 })
 
 afterEach(() => vi.useRealTimers())
@@ -120,6 +128,7 @@ describe('RetrievalExperimentView', () => {
     expect(experimentsApi.createExperiment).toHaveBeenCalledWith({
       name: '劳动权益检索实验',
       case_ids: null,
+      case_scope: 'BUILTIN_BASELINE',
       answer_style: 'plain',
       configs: [
         { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 from uuid import UUID
@@ -31,6 +30,11 @@ from app.services.missing_knowledge import (
     MissingKnowledgeReason,
     MissingKnowledgeService,
 )
+from app.services.rag_chain import (
+    ANSWER_STYLE_INSTRUCTIONS,
+    REFUSAL_TEXT,
+    RagChain,
+)
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -39,14 +43,8 @@ from app.services.vector_store import (
 )
 
 logger = logging.getLogger(__name__)
-_PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
-_REFUSAL = (
-    "目前知识库中的资料不足以支持对这个问题作出可靠判断。请补充相关资料后再咨询。"
-)
-_ANSWER_STYLE_INSTRUCTIONS = {
-    "plain": "面向普通劳动者，少用专业术语，先给简明结论，再解释依据和可执行建议。",
-    "legal": "使用严谨、客观的表达，明确说明证据支持的适用条件、事实前提与结论边界。",
-}
+_REFUSAL = REFUSAL_TEXT
+_ANSWER_STYLE_INSTRUCTIONS = ANSWER_STYLE_INSTRUCTIONS
 
 
 class ChatService:
@@ -63,6 +61,7 @@ class ChatService:
         self.retrieval_service = retrieval_service
         self.config = config
         self.llm_client = llm_client or LlmClient(config)
+        self.rag_chain = RagChain(retrieval_service, self.llm_client, config)
         self.tool_decision_service = ToolDecisionService()
         self.material_checklist_tool = MaterialChecklistTool()
         self.compliance_rule_service = ComplianceRuleService()
@@ -138,7 +137,7 @@ class ChatService:
             return
 
         try:
-            evidence = self.retrieval_service.retrieve(rewritten_question)
+            evidence = await self._retrieve_evidence(rewritten_question)
         except EmbeddingUnavailableError:
             yield _sse(
                 "error",
@@ -201,8 +200,6 @@ class ChatService:
         answer_parts: list[str] = []
         tool_executions: list[ToolExecutionItem] = []
         if refused:
-            answer_parts.append(_REFUSAL)
-            yield _sse("token", {"content": _REFUSAL})
             if record_missing_knowledge and refusal_reason is not None:
                 try:
                     self.missing_knowledge_service.record_refusal(
@@ -232,39 +229,39 @@ class ChatService:
                 tool_executions.append(execution)
                 yield _sse("tool", execution.model_dump(mode="json"))
 
-            messages = self._answer_messages(
+        try:
+            async for token in self.rag_chain.stream_answer(
                 payload.answer_style,
                 question,
                 rewritten_question,
                 evidence,
                 compliance_required,
                 tool_executions[0] if tool_executions else None,
+                refused=refused,
+            ):
+                if await request.is_disconnected():
+                    return
+                answer_parts.append(token)
+                yield _sse("token", {"content": token})
+        except ModelUnavailableError:
+            yield _sse(
+                "error",
+                {
+                    "code": int(ErrorCode.MODEL_UNAVAILABLE),
+                    "message": "模型服务暂不可用",
+                },
             )
-            try:
-                async for token in self.llm_client.stream(messages):
-                    if await request.is_disconnected():
-                        return
-                    answer_parts.append(token)
-                    yield _sse("token", {"content": token})
-            except ModelUnavailableError:
-                yield _sse(
-                    "error",
-                    {
-                        "code": int(ErrorCode.MODEL_UNAVAILABLE),
-                        "message": "模型服务暂不可用",
-                    },
-                )
-                return
-            except Exception:
-                logger.exception("LLM response stream failed")
-                yield _sse(
-                    "error",
-                    {
-                        "code": int(ErrorCode.MODEL_UNAVAILABLE),
-                        "message": "模型服务暂不可用",
-                    },
-                )
-                return
+            return
+        except Exception:
+            logger.exception("LLM response stream failed")
+            yield _sse(
+                "error",
+                {
+                    "code": int(ErrorCode.MODEL_UNAVAILABLE),
+                    "message": "模型服务暂不可用",
+                },
+            )
+            return
 
         if not answer_parts:
             yield _sse(
@@ -333,22 +330,16 @@ class ChatService:
 
         rewritten_question = await self._rewrite_question(history, question)
         retrieval_started = perf_counter()
-        evidence = self.retrieval_service.retrieve(rewritten_question)
+        evidence = await self._retrieve_evidence(rewritten_question)
         retrieval_ms = round((perf_counter() - retrieval_started) * 1000)
         refused, _ = await self._judge_evidence(
             rewritten_question, evidence, strict=True
         )
-        if refused:
-            return {
-                "answer": _REFUSAL,
-                "refused": True,
-                "citations": [],
-                "rewritten_question": rewritten_question,
-                "retrieval_ms": retrieval_ms,
-                "compliance_shown": False,
-            }
-
-        tool_execution = self.tool_decision_service.decide(question, rewritten_question)
+        tool_execution = (
+            self.tool_decision_service.decide(question, rewritten_question)
+            if not refused
+            else None
+        )
         tool_result = (
             self.material_checklist_tool.execute(tool_execution)
             if tool_execution is not None
@@ -357,15 +348,15 @@ class ChatService:
         compliance_required = self.compliance_rule_service.requires_notice(
             question, rewritten_question
         )
-        messages = self._answer_messages(
+        answer = await self.rag_chain.complete_answer(
             answer_style,
             question,
             rewritten_question,
             evidence,
             compliance_required,
             tool_result,
+            refused=refused,
         )
-        answer = (await self.llm_client.complete(messages)).strip()
         if not answer:
             raise ModelUnavailableError("模型未返回回答内容")
         compliance_required = (
@@ -378,8 +369,11 @@ class ChatService:
             answer = f"{answer}\n\n{COMPLIANCE_NOTICE}"
         return {
             "answer": answer,
-            "refused": False,
-            "citations": evidence,
+            "refused": refused,
+            # Keep the pre-gate candidates available to diagnostics. Production
+            # callers still use `citations`, which remains empty on refusal.
+            "retrieved_sources": evidence,
+            "citations": [] if refused else evidence,
             "rewritten_question": rewritten_question,
             "retrieval_ms": retrieval_ms,
             "compliance_shown": COMPLIANCE_NOTICE in answer,
@@ -388,32 +382,12 @@ class ChatService:
     async def _rewrite_question(
         self, history: list[dict[str, Any]], question: str
     ) -> str:
-        if not history:
-            return question
-        system_prompt = (_PROMPT_DIR / "question_rewrite.txt").read_text(
-            encoding="utf-8"
-        )
-        context = [
-            {"role": item["role"], "content": item["content"]} for item in history
-        ]
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {"history": context, "current_question": question},
-                    ensure_ascii=False,
-                ),
-            },
-        ]
-        try:
-            result = (await self.llm_client.complete(messages)).strip().strip('"“”')
-            return result if result else question
-        except Exception:
-            logger.warning(
-                "Question rewrite failed; using the original question", exc_info=True
-            )
-            return question
+        self._sync_rag_chain()
+        return await self.rag_chain.rewrite_question(history, question)
+
+    async def _retrieve_evidence(self, question: str) -> list[dict[str, Any]]:
+        self._sync_rag_chain()
+        return await self.rag_chain.retrieve(question)
 
     async def _judge_evidence(
         self,
@@ -422,46 +396,11 @@ class ChatService:
         *,
         strict: bool = False,
     ) -> tuple[bool, MissingKnowledgeReason | None]:
-        if not evidence:
-            return True, MissingKnowledgeReason.NO_RETRIEVAL_RESULT
-        if (
-            max(item["retrieval_score"] for item in evidence)
-            < self.config.rag_score_threshold
-        ):
-            return True, MissingKnowledgeReason.LOW_RELEVANCE
+        self._sync_rag_chain()
+        return await self.rag_chain.judge_evidence(question, evidence, strict=strict)
 
-        prompt = (_PROMPT_DIR / "evidence_judge.txt").read_text(encoding="utf-8")
-        try:
-            result = await self.llm_client.complete(
-                [
-                    {"role": "system", "content": prompt},
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"question": question, "evidence": evidence},
-                            ensure_ascii=False,
-                        ),
-                    },
-                ],
-                json_mode=True,
-            )
-            judgement = json.loads(result)
-            if not isinstance(judgement.get("sufficient"), bool):
-                return True, None
-            if not judgement["sufficient"]:
-                return True, MissingKnowledgeReason.INSUFFICIENT_EVIDENCE
-            return False, None
-        except ModelUnavailableError:
-            if strict:
-                raise
-            logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
-            return True, None
-        except Exception:
-            logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
-            return True, None
-
-    @staticmethod
     def _answer_messages(
+        self,
         answer_style: AnswerStyle,
         question: str,
         rewritten_question: str,
@@ -469,38 +408,20 @@ class ChatService:
         compliance_required: bool,
         tool_execution: ToolExecutionItem | None,
     ) -> list[dict[str, str]]:
-        template = (_PROMPT_DIR / "answer_system.txt").read_text(encoding="utf-8")
-        compliance_instruction = (
-            f"回答末尾必须逐字包含以下提示：{COMPLIANCE_NOTICE}"
-            if compliance_required
-            else "当前规则未要求固定提示；回答仍须遵守证据约束。"
+        self._sync_rag_chain()
+        return self.rag_chain.answer_messages(
+            answer_style,
+            question,
+            rewritten_question,
+            evidence,
+            compliance_required,
+            tool_execution,
         )
-        replacements = {
-            "{{answer_style}}": answer_style.value,
-            "{{answer_style_instructions}}": _ANSWER_STYLE_INSTRUCTIONS[
-                answer_style.value
-            ],
-            "{{compliance_required}}": str(compliance_required).lower(),
-            "{{compliance_instruction}}": compliance_instruction,
-            "{{tool_result}}": (
-                json.dumps(
-                    tool_execution.output.model_dump(mode="json"), ensure_ascii=False
-                )
-                if tool_execution
-                else "无"
-            ),
-            "{{question}}": question,
-            "{{rewritten_question}}": rewritten_question,
-            "{{context}}": "\n\n".join(
-                f"[Evidence {item['rank_no']}] {item['content']}" for item in evidence
-            ),
-        }
-        for placeholder, value in replacements.items():
-            template = template.replace(placeholder, value)
-        return [
-            {"role": "system", "content": template},
-            {"role": "user", "content": "请根据上述约束与证据回答问题。"},
-        ]
+
+    def _sync_rag_chain(self) -> None:
+        # Tests and callers may replace llm_client after construction; keep the
+        # LangChain adapter bound to the current client.
+        self.rag_chain.set_llm_client(self.llm_client)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:

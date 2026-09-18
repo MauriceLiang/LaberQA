@@ -4,13 +4,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_evaluation_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
+from app.core.error_codes import ErrorCode
+from app.core.errors import AppError
 from app.main import app
-from app.schemas.contracts import EvaluationRunCreate
+from app.schemas.contracts import (
+    EvaluationCaseCreate,
+    EvaluationCaseUpdate,
+    EvaluationRunCreate,
+)
 from app.services.evaluation_cases import fixed_evaluation_cases
 from app.services.evaluation_service import EvaluationService
 from app.services.llm import ModelUnavailableError
@@ -189,6 +196,37 @@ def test_multiturn_replays_prior_user_and_assistant_messages_in_memory() -> None
         assert service.get_run(run["id"])["metrics"]["multi_turn_pass_rate"] == 1.0
 
 
+def test_delete_run_rejects_active_jobs_and_cascades_persisted_results() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+        run = service.create_run(
+            EvaluationRunCreate(name="delete", case_ids=[1], answer_style="plain")
+        )
+
+        with pytest.raises(AppError) as error:
+            service.delete_run(run["id"])
+        assert error.value.code == ErrorCode.INVALID_EVALUATION_RUN_STATE
+
+        asyncio.run(service.execute_run(run["id"]))
+        service.delete_run(run["id"])
+
+        assert service.repository.get_run(run["id"]) is None
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
+                (run["id"],),
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
+                (run["id"],),
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM evaluation_case"
+            ).fetchone()[0] == 60
+
+
 def test_item_error_is_saved_and_remaining_cases_continue() -> None:
     with tempfile.TemporaryDirectory() as directory:
         database_path = Path(directory) / "eval.db"
@@ -249,6 +287,99 @@ def test_startup_recovery_marks_interrupted_run_failed() -> None:
         assert detail["error_message"] == "服务重启导致任务中断"
 
 
+def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+        case = service.create_case(
+            EvaluationCaseCreate(
+                topic="自定义主题",
+                expected_type="ANSWER",
+                turns=["原问题"],
+                expected_points=["原要点"],
+                expected_sources=[],
+                should_show_compliance=False,
+            )
+        )
+
+        updated = service.update_case(
+            case["id"],
+            EvaluationCaseUpdate(
+                version=1,
+                topic="更新主题",
+                expected_type="ANSWER",
+                turns=["新问题"],
+                expected_points=["新要点"],
+                expected_sources=[],
+                should_show_compliance=True,
+            ),
+        )
+        assert updated["version"] == 2
+        run = service.create_run(
+            EvaluationRunCreate(
+                name="snapshot",
+                case_ids=[case["id"]],
+                answer_style="plain",
+            )
+        )
+        snapshot = service.repository.run_cases(run["id"])[0]
+        service.repository.complete_run(
+            run["id"],
+            {
+                "accuracy": None,
+                "reject_rate": None,
+                "citation_hit_rate": None,
+                "multi_turn_pass_rate": None,
+                "compliance_hit_rate": None,
+            },
+        )
+
+        archived = service.archive_case(case["id"])
+        assert archived["status"] == "ARCHIVED"
+        assert service.repository.get_cases()[-1]["id"] == 60
+        assert service.repository.get_case(case["id"], include_archived=True)["status"] == "ARCHIVED"
+        assert snapshot["topic"] == "更新主题"
+        assert snapshot["version"] == 2
+
+
+def test_builtin_case_can_be_updated_and_run_scope_is_explicit() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database_path = Path(directory) / "eval.db"
+        _create_database(database_path)
+        service = _service(database_path)
+
+        updated = service.update_case(
+            1,
+            EvaluationCaseUpdate(
+                version=1,
+                topic="已修改的内置用例",
+                expected_type="ANSWER",
+                turns=["问题"],
+                expected_points=["要点"],
+                expected_sources=[],
+                should_show_compliance=False,
+            ),
+        )
+        assert updated["origin"] == "BUILTIN"
+        assert updated["version"] == 2
+
+        with pytest.raises(AppError) as error:
+            service.archive_case(1)
+        assert error.value.code == ErrorCode.BUILTIN_CASE_READ_ONLY
+
+        baseline = service.create_run(
+            EvaluationRunCreate(
+                name="baseline",
+                case_ids=None,
+                answer_style="plain",
+                case_scope="BUILTIN_BASELINE",
+            )
+        )
+        assert baseline["case_count"] == 60
+        assert service.repository.get_run(baseline["id"])["config"]["case_scope"] == "BUILTIN_BASELINE"
+
+
 def test_api_lists_seed_cases_and_returns_accepted_run() -> None:
     with tempfile.TemporaryDirectory() as directory:
         database_path = Path(directory) / "api.db"
@@ -303,6 +434,26 @@ def test_api_lists_seed_cases_and_returns_accepted_run() -> None:
                 assert runs_response.json()["data"]["total"] == 1
                 assert client.get(f"/api/evaluations/runs/{run_id}").status_code == 200
                 assert client.get("/api/evaluations/runs/999").status_code == 404
+
+                delete_response = client.delete(f"/api/evaluations/runs/{run_id}")
+                assert delete_response.status_code == 200
+                assert delete_response.json() == {
+                    "code": 0,
+                    "message": "deleted",
+                    "data": None,
+                }
+                assert client.get(f"/api/evaluations/runs/{run_id}").status_code == 404
+
+                active_run = service.create_run(
+                    EvaluationRunCreate(
+                        name="active", case_ids=[1], answer_style="plain"
+                    )
+                )
+                active_delete = client.delete(
+                    f"/api/evaluations/runs/{active_run['id']}"
+                )
+                assert active_delete.status_code == 409
+                assert active_delete.json()["code"] == 40903
         finally:
             app.dependency_overrides.clear()
             app.dependency_overrides.update(original_overrides)

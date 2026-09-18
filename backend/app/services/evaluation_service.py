@@ -1,4 +1,4 @@
-"""Asynchronous fixed-set evaluation without production session writes."""
+"""Asynchronous evaluation and test-case management without production session writes."""
 
 from __future__ import annotations
 
@@ -11,7 +11,15 @@ from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.repositories.evaluation_repository import EvaluationRepository
-from app.schemas.contracts import AnswerStyle, EvaluationRunCreate
+from app.schemas.contracts import (
+    AnswerStyle,
+    EvaluationCaseCreate,
+    EvaluationCaseOrigin,
+    EvaluationCaseScope,
+    EvaluationCaseStatus,
+    EvaluationCaseUpdate,
+    EvaluationRunCreate,
+)
 from app.services.chat_service import ChatService
 from app.services.embedding import EmbeddingUnavailableError
 from app.services.evaluation_cases import fixed_evaluation_cases
@@ -55,6 +63,9 @@ class EvaluationService:
         topic: str | None,
         expected_type: str | None,
         is_multi_turn: bool | None,
+        origin: str | None,
+        status: str | None,
+        include_archived: bool,
     ) -> tuple[list[dict[str, Any]], int]:
         return self.repository.list_cases(
             page=page,
@@ -62,11 +73,100 @@ class EvaluationService:
             topic=topic,
             expected_type=expected_type,
             is_multi_turn=is_multi_turn,
+            origin=origin,
+            status=status,
+            include_archived=include_archived,
         )
 
+    def create_case(self, payload: EvaluationCaseCreate) -> dict[str, Any]:
+        return self.repository.create_case(payload.model_dump(mode="json"))
+
+    def get_case(self, case_id: int, *, include_archived: bool = False) -> dict[str, Any]:
+        case = self.repository.get_case(case_id, include_archived=include_archived)
+        if case is None:
+            raise AppError(
+                ErrorCode.EVALUATION_CASE_NOT_FOUND,
+                "评测用例不存在",
+                http_status=404,
+            )
+        return case
+
+    def update_case(
+        self, case_id: int, payload: EvaluationCaseUpdate
+    ) -> dict[str, Any]:
+        current = self.get_case(case_id, include_archived=True)
+        if current["status"] != EvaluationCaseStatus.ACTIVE.value:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "已归档的评测用例不能编辑",
+                http_status=409,
+            )
+        if current["version"] != payload.version:
+            raise AppError(
+                ErrorCode.CASE_VERSION_CONFLICT,
+                "评测用例已被其他操作修改，请刷新后重试",
+                http_status=409,
+            )
+        updated = self.repository.update_case(
+            case_id, payload.version, payload.model_dump(mode="json")
+        )
+        if updated is None:
+            raise AppError(
+                ErrorCode.CASE_VERSION_CONFLICT,
+                "评测用例已被其他操作修改，请刷新后重试",
+                http_status=409,
+            )
+        return updated
+
+    def archive_case(self, case_id: int) -> dict[str, Any]:
+        current = self.get_case(case_id, include_archived=True)
+        if current["origin"] == EvaluationCaseOrigin.BUILTIN.value:
+            raise AppError(
+                ErrorCode.BUILTIN_CASE_READ_ONLY,
+                "内置评测用例不能删除",
+                http_status=409,
+            )
+        if current["status"] == EvaluationCaseStatus.ARCHIVED.value:
+            return current
+        if self.repository.has_active_run(case_id):
+            raise AppError(
+                ErrorCode.CASE_IN_ACTIVE_RUN,
+                "评测用例正在运行中的批次中，暂不能删除",
+                http_status=409,
+            )
+        archived = self.repository.archive_case(case_id)
+        if archived is None:
+            raise AppError(
+                ErrorCode.EVALUATION_CASE_NOT_FOUND,
+                "评测用例不存在",
+                http_status=404,
+            )
+        return archived
+
     def create_run(self, payload: EvaluationRunCreate) -> dict[str, Any]:
-        cases = self.repository.get_cases(payload.case_ids)
-        if payload.case_ids is not None and len(cases) != len(payload.case_ids):
+        case_scope = payload.case_scope or (
+            EvaluationCaseScope.SELECTED
+            if payload.case_ids is not None
+            else EvaluationCaseScope.BUILTIN_BASELINE
+        )
+        if case_scope is EvaluationCaseScope.BUILTIN_BASELINE:
+            cases, _ = self.repository.list_cases(
+                page=1,
+                size=100,
+                topic=None,
+                expected_type=None,
+                is_multi_turn=None,
+                origin=EvaluationCaseOrigin.BUILTIN.value,
+                status=EvaluationCaseStatus.ACTIVE.value,
+                include_archived=False,
+            )
+        elif case_scope is EvaluationCaseScope.ALL_ACTIVE:
+            cases = self.repository.get_cases()
+        else:
+            cases = self.repository.get_cases(payload.case_ids)
+        if case_scope is EvaluationCaseScope.SELECTED and (
+            payload.case_ids is None or len(cases) != len(payload.case_ids)
+        ):
             raise AppError(
                 ErrorCode.INVALID_REQUEST,
                 "评测用例不存在",
@@ -80,13 +180,14 @@ class EvaluationService:
             )
         snapshot = {
             "answer_style": payload.answer_style.value,
+            "case_scope": case_scope.value,
             "llm_model": self.config.llm_model,
             "evaluator_model": self.config.llm_model,
             "evaluator_prompt_version": _EVALUATOR_PROMPT_VERSION,
             "embedding_provider": self.config.embedding_provider,
             "embedding_model": self.config.embedding_model,
             "embedding_normalize": self.config.embedding_normalize,
-            "prompt_version": "labor_v1",
+            "prompt_version": "labor_langchain_v1",
             "chunk_size": self.config.chunk_size,
             "chunk_overlap": self.config.chunk_overlap,
             "top_k": self.config.rag_top_k,
@@ -95,7 +196,7 @@ class EvaluationService:
         }
         return self.repository.create_run(
             payload.name,
-            [case["id"] for case in cases],
+            cases,
             snapshot,
         )
 
@@ -114,6 +215,21 @@ class EvaluationService:
             )
         return run
 
+    def delete_run(self, run_id: int) -> None:
+        run = self.repository.delete_run(run_id)
+        if run is None:
+            raise AppError(
+                ErrorCode.EVALUATION_RUN_NOT_FOUND,
+                "评测批次不存在",
+                http_status=404,
+            )
+        if run["status"] not in {"COMPLETED", "FAILED"}:
+            raise AppError(
+                ErrorCode.INVALID_EVALUATION_RUN_STATE,
+                "排队中或运行中的评测批次不能删除",
+                http_status=409,
+            )
+
     async def execute_run(self, run_id: int) -> None:
         try:
             self.repository.set_run_status(run_id, "RUNNING")
@@ -121,8 +237,7 @@ class EvaluationService:
             if run is None:
                 raise RuntimeError("评测批次不存在")
             answer_style = AnswerStyle(run["config"]["answer_style"])
-            case_ids = self.repository.run_case_ids(run_id)
-            cases = self.repository.get_cases(case_ids)
+            cases = self.repository.run_cases(run_id)
             for case in cases:
                 try:
                     result = await self._evaluate_case(case, answer_style)
@@ -148,9 +263,8 @@ class EvaluationService:
             if run is None:
                 raise RuntimeError("评测批次在执行过程中不存在")
             result_by_case = {result["case_id"]: result for result in run["results"]}
-            selected_cases = self.repository.get_cases(case_ids)
             self.repository.complete_run(
-                run_id, _calculate_metrics(selected_cases, result_by_case)
+                run_id, _calculate_metrics(cases, result_by_case)
             )
         except Exception as exc:
             logger.exception("Evaluation run %s failed", run_id)

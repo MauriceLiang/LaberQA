@@ -137,10 +137,21 @@ class RetrievalExperimentRepository:
             )
 
     def list_experiments(
-        self, *, page: int, size: int, status: str | None
+        self,
+        *,
+        page: int,
+        size: int,
+        status: str | None,
+        include_archived: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
-        where_clause = "WHERE status = ?" if status else ""
-        parameters: list[Any] = [status] if status else []
+        conditions: list[str] = []
+        parameters: list[Any] = []
+        if status:
+            conditions.append("status = ?")
+            parameters.append(status)
+        if not include_archived:
+            conditions.append("archived_at IS NULL")
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self._connection() as connection:
             total = int(
                 connection.execute(
@@ -158,6 +169,41 @@ class RetrievalExperimentRepository:
                 [*parameters, size, (page - 1) * size],
             ).fetchall()
             return [self._summary(row) for row in rows], total
+
+    def archive_experiment(self, experiment_id: int) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE retrieval_experiment
+                SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status IN ('COMPLETED', 'FAILED')
+                  AND archived_at IS NULL
+                """,
+                (experiment_id,),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM retrieval_experiment WHERE id = ?", (experiment_id,)
+            ).fetchone()
+            return self._summary(row) if row is not None else None
+
+    def restore_experiment(self, experiment_id: int) -> dict[str, Any] | None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE retrieval_experiment
+                SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND archived_at IS NOT NULL
+                """,
+                (experiment_id,),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM retrieval_experiment WHERE id = ?", (experiment_id,)
+            ).fetchone()
+            return self._summary(row) if row is not None else None
 
     def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
         with self._connection() as connection:
@@ -180,6 +226,13 @@ class RetrievalExperimentRepository:
                 "results": [self._result(item) for item in results],
             }
 
+    def delete_experiment(self, experiment_id: int) -> bool:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM retrieval_experiment WHERE id = ?", (experiment_id,)
+            )
+            return cursor.rowcount > 0
+
     @staticmethod
     def _summary(row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -189,6 +242,7 @@ class RetrievalExperimentRepository:
             "progress_current": int(row["progress_current"]),
             "progress_total": int(row["progress_total"]),
             "error_message": row["error_message"],
+            "archived_at": row["archived_at"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

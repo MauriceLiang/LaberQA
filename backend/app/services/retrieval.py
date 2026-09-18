@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
+
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 
 from app.core.config import Settings, settings
 from app.repositories.document_repository import DocumentRepository
@@ -73,3 +78,38 @@ class RetrievalService:
         if self.config.rerank_enabled:
             return self.rerank_service.rerank(query, evidence)
         return evidence
+
+
+class LaborKnowledgeRetriever(BaseRetriever):
+    """Expose the existing SQLite/FAISS retrieval service to LangChain."""
+
+    retrieval_service: Any
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: CallbackManagerForRetrieverRun,
+    ) -> list[Document]:
+        del run_manager
+        evidence = self.retrieval_service.retrieve(query)
+        return [_document_from_evidence(item) for item in evidence]
+
+
+def _document_from_evidence(item: Mapping[str, Any]) -> Document:
+    chunk_id = int(item["chunk_id"])
+    metadata = {
+        "chunk_id": chunk_id,
+        "document_id": int(item["document_id"]),
+        "file_name": str(item["file_name"]),
+        "chunk_no": int(item["chunk_no"]),
+        "score": float(item["score"]),
+        "retrieval_score": float(item["retrieval_score"]),
+        "rerank_score": item.get("rerank_score"),
+        "rank_no": int(item["rank_no"]),
+    }
+    return Document(
+        id=str(chunk_id),
+        page_content=str(item["content"]),
+        metadata=metadata,
+    )
