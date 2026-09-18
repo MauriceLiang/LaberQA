@@ -9,18 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.documents import Document
+from langchain_core.exceptions import OutputParserException
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableBranch, RunnableLambda
 
 from app.core.config import Settings, settings
+from app.rag.providers import ensure_chat_model
 from app.schemas.contracts import AnswerStyle, ToolExecutionItem
 from app.services.compliance import COMPLIANCE_NOTICE
-from app.services.llm import (
-    LlmClient,
-    LlmRunnable,
-    ModelUnavailableError,
-    messages_to_dicts,
-)
+from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import MissingKnowledgeReason
 from app.services.retrieval import LaborKnowledgeRetriever, RetrievalService
 
@@ -48,34 +47,37 @@ class RagChain:
     def __init__(
         self,
         retrieval_service: RetrievalService,
-        llm_client: LlmClient,
+        chat_model: BaseChatModel,
         config: Settings = settings,
     ) -> None:
         self.retriever = LaborKnowledgeRetriever(
             retrieval_service=retrieval_service,
             name="labor_knowledge_retriever",
         )
-        self.llm_client = llm_client
+        self.chat_model = ensure_chat_model(chat_model)
         self.config = config
         self.answer_prompt = _answer_prompt()
         self.rewrite_prompt = _rewrite_prompt()
         self.evidence_prompt = _evidence_prompt()
-        self._set_llm_client(llm_client)
+        self._set_chat_model(self.chat_model)
 
-    def _set_llm_client(self, client: LlmClient) -> None:
-        self.llm_client = client
-        self.rewrite_runnable = LlmRunnable(client)
-        self.evidence_runnable = LlmRunnable(client, json_mode=True)
-        self.answer_runnable = LlmRunnable(client)
+    def _set_chat_model(self, model: BaseChatModel) -> None:
+        self.chat_model = model
+        self.rewrite_chain = self.rewrite_prompt | model | StrOutputParser()
+        self.evidence_chain = (
+            self.evidence_prompt
+            | model.bind(response_format={"type": "json_object"})
+            | JsonOutputParser()
+        )
         self.answer_chain = RunnableBranch(
             (lambda state: bool(state["refused"]), RunnableLambda(_refusal)),
-            self.answer_prompt | self.answer_runnable,
+            self.answer_prompt | model | StrOutputParser(),
         )
 
-    def set_llm_client(self, client: LlmClient) -> None:
-        """Keep all Runnable adapters bound to the current client instance."""
+    def set_chat_model(self, model: BaseChatModel) -> None:
+        """Keep all chains bound to the current ChatModel instance."""
 
-        self._set_llm_client(client)
+        self._set_chat_model(ensure_chat_model(model))
 
     async def rewrite_question(
         self, history: list[dict[str, Any]], question: str
@@ -85,9 +87,8 @@ class RagChain:
         context = [
             {"role": item["role"], "content": item["content"]} for item in history
         ]
-        chain = self.rewrite_prompt | self.rewrite_runnable
         try:
-            result = await chain.ainvoke(
+            result = await self.rewrite_chain.ainvoke(
                 {
                     "context": json.dumps(
                         {"history": context, "current_question": question},
@@ -122,9 +123,8 @@ class RagChain:
         ):
             return True, MissingKnowledgeReason.LOW_RELEVANCE
 
-        chain = self.evidence_prompt | self.evidence_runnable
         try:
-            result = await chain.ainvoke(
+            judgement = await self.evidence_chain.ainvoke(
                 {
                     "payload": json.dumps(
                         {"question": question, "evidence": evidence},
@@ -132,8 +132,9 @@ class RagChain:
                     ),
                 }
             )
-            judgement = json.loads(result)
-            if not isinstance(judgement.get("sufficient"), bool):
+            if not isinstance(judgement, dict) or not isinstance(
+                judgement.get("sufficient"), bool
+            ):
                 return True, None
             if not judgement["sufficient"]:
                 return True, MissingKnowledgeReason.INSUFFICIENT_EVIDENCE
@@ -143,7 +144,12 @@ class RagChain:
                 raise
             logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
             return True, None
-        except Exception:
+        except OutputParserException:
+            logger.warning("Evidence judge returned invalid JSON", exc_info=True)
+            return True, None
+        except Exception as exc:
+            if strict:
+                raise ModelUnavailableError("模型服务暂不可用") from exc
             logger.warning("Evidence judge failed; refusing the answer", exc_info=True)
             return True, None
 
@@ -187,19 +193,24 @@ class RagChain:
         *,
         refused: bool = False,
     ) -> str:
-        return (
-            await self.answer_chain.ainvoke(
-                _answer_input(
-                    answer_style,
-                    question,
-                    rewritten_question,
-                    evidence,
-                    compliance_required,
-                    tool_execution,
-                    refused=refused,
+        try:
+            return (
+                await self.answer_chain.ainvoke(
+                    _answer_input(
+                        answer_style,
+                        question,
+                        rewritten_question,
+                        evidence,
+                        compliance_required,
+                        tool_execution,
+                        refused=refused,
+                    )
                 )
-            )
-        ).strip()
+            ).strip()
+        except ModelUnavailableError:
+            raise
+        except Exception as exc:
+            raise ModelUnavailableError("模型服务暂不可用") from exc
 
     async def stream_answer(
         self,
@@ -223,7 +234,8 @@ class RagChain:
                 refused=refused,
             )
         ):
-            yield token
+            if token:
+                yield token
 
     def answer_messages(
         self,
@@ -236,16 +248,15 @@ class RagChain:
     ) -> list[dict[str, str]]:
         """Return rendered messages for compatibility with diagnostics and tests."""
 
-        return messages_to_dicts(
-            self.answer_prompt_value(
-                answer_style,
-                question,
-                rewritten_question,
-                evidence,
-                compliance_required,
-                tool_execution,
-            )
+        prompt_value = self.answer_prompt_value(
+            answer_style,
+            question,
+            rewritten_question,
+            evidence,
+            compliance_required,
+            tool_execution,
         )
+        return _message_dicts(prompt_value.messages)
 
 
 def _evidence_from_document(document: Document) -> dict[str, Any]:
@@ -325,6 +336,17 @@ def _tool_result(tool_execution: ToolExecutionItem | None) -> str:
     if tool_execution is None:
         return "无"
     return json.dumps(tool_execution.output.model_dump(mode="json"), ensure_ascii=False)
+
+
+def _message_dicts(messages: Sequence[Any]) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for message in messages:
+        role = {"human": "user", "ai": "assistant"}.get(message.type, message.type)
+        content = message.content
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False)
+        result.append({"role": role, "content": content})
+    return result
 
 
 def _answer_input(

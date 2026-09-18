@@ -379,7 +379,7 @@ class RetrievalExperimentService:
             self.chat_service.session_service,
             retrieval_service,
             runtime_config,
-            llm_client=self.chat_service.llm_client,
+            chat_model=self.chat_service.chat_model,
             missing_knowledge_service=self.chat_service.missing_knowledge_service,
         )
         try:
@@ -835,7 +835,7 @@ class RetrievalExperimentService:
             self.chat_service.session_service,
             retrieval_service,
             runtime_config,
-            llm_client=self.chat_service.llm_client,
+            chat_model=self.chat_service.chat_model,
             missing_knowledge_service=self.chat_service.missing_knowledge_service,
         )
 

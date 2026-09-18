@@ -7,9 +7,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from langchain_core.exceptions import OutputParserException
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.providers import ensure_chat_model
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.schemas.contracts import (
     AnswerStyle,
@@ -353,18 +358,34 @@ class EvaluationService:
             "rewritten_question": final["rewritten_question"],
             "answer": final["answer"],
         }
-        raw = await self.chat_service.llm_client.complete(
+        chat_model = getattr(self.chat_service, "chat_model", None)
+        if chat_model is None:
+            legacy_client = getattr(self.chat_service, "llm_client", None)
+            if legacy_client is None:
+                raise ModelUnavailableError("评测模型尚未配置")
+            chat_model = ensure_chat_model(legacy_client)
+        prompt = ChatPromptTemplate.from_messages(
             [
-                {"role": "system", "content": self.evaluator_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps(prompt_input, ensure_ascii=False),
-                },
+                ("system", _escape_fstring_literals(self.evaluator_prompt)),
+                ("human", "{payload}"),
             ],
-            json_mode=True,
-            temperature=0,
+            template_format="f-string",
         )
-        value = json.loads(raw)
+        try:
+            value = await (
+                prompt
+                | chat_model.bind(
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                )
+                | JsonOutputParser()
+            ).ainvoke({"payload": json.dumps(prompt_input, ensure_ascii=False)})
+        except ModelUnavailableError:
+            raise
+        except OutputParserException as exc:
+            raise TypeError("评测器未返回有效 JSON") from exc
+        except Exception as exc:
+            raise ModelUnavailableError("模型服务暂不可用") from exc
         if not isinstance(value, dict) or not isinstance(value.get("correct"), bool):
             raise TypeError("评测器未返回有效的 correct 判断")
         context_retained = value.get("context_retained", len(case["turns"]) == 1)
@@ -385,6 +406,10 @@ class EvaluationService:
         if isinstance(exc, VectorStorePersistenceError):
             return "知识库索引不可用"
         return str(exc) or "评测任务失败"
+
+
+def _escape_fstring_literals(value: str) -> str:
+    return value.replace("{", "{{").replace("}", "}}")
 
 
 def _failed_result(case_id: int, error_message: str) -> dict[str, Any]:

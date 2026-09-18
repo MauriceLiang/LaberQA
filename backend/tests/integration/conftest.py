@@ -32,7 +32,7 @@ class FixedEmbeddingProvider:
 
 
 class FixedLlm:
-    """Deterministic async client used by the existing LlmRunnable adapter."""
+    """Deterministic async client used by the legacy-client compatibility path."""
 
     def __init__(self) -> None:
         self.completions: list[tuple[list[dict[str, str]], bool]] = []

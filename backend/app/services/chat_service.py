@@ -9,10 +9,12 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Request
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.providers import build_chat_model, ensure_chat_model
 from app.schemas.contracts import (
     AnswerStyle,
     ChatRequest,
@@ -23,7 +25,7 @@ from app.schemas.contracts import (
 )
 from app.services.compliance import COMPLIANCE_NOTICE, ComplianceRuleService
 from app.services.embedding import EmbeddingUnavailableError
-from app.services.llm import LlmClient, ModelUnavailableError
+from app.services.llm import ModelUnavailableError
 from app.services.material_checklist import MaterialChecklistTool, ToolDecisionService
 from app.services.missing_knowledge import (
     ExecutionMode,
@@ -47,6 +49,18 @@ _REFUSAL = REFUSAL_TEXT
 _ANSWER_STYLE_INSTRUCTIONS = ANSWER_STYLE_INSTRUCTIONS
 
 
+class _UnavailableChatModel(BaseChatModel):
+    """Keep startup lazy when the existing LLM configuration is incomplete."""
+
+    @property
+    def _llm_type(self) -> str:
+        return "unavailable"
+
+    def _generate(self, *args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise ModelUnavailableError("LLM_API_KEY、LLM_BASE_URL、LLM_MODEL 尚未配置")
+
+
 class ChatService:
     def __init__(
         self,
@@ -54,14 +68,23 @@ class ChatService:
         retrieval_service: RetrievalService,
         config: Settings = settings,
         *,
-        llm_client: LlmClient | None = None,
+        chat_model: BaseChatModel | None = None,
+        llm_client: Any | None = None,
         missing_knowledge_service: MissingKnowledgeService | None = None,
     ) -> None:
         self.session_service = session_service
         self.retrieval_service = retrieval_service
         self.config = config
-        self.llm_client = llm_client or LlmClient(config)
-        self.rag_chain = RagChain(retrieval_service, self.llm_client, config)
+        self._legacy_llm_client = llm_client
+        if chat_model is not None:
+            self.chat_model = ensure_chat_model(chat_model)
+        elif llm_client is not None:
+            self.chat_model = ensure_chat_model(llm_client)
+        elif all((config.llm_api_key, config.llm_base_url, config.llm_model)):
+            self.chat_model = build_chat_model(config)
+        else:
+            self.chat_model = _UnavailableChatModel()
+        self.rag_chain = RagChain(retrieval_service, self.chat_model, config)
         self.tool_decision_service = ToolDecisionService()
         self.material_checklist_tool = MaterialChecklistTool()
         self.compliance_rule_service = ComplianceRuleService()
@@ -419,9 +442,20 @@ class ChatService:
         )
 
     def _sync_rag_chain(self) -> None:
-        # Tests and callers may replace llm_client after construction; keep the
-        # LangChain adapter bound to the current client.
-        self.rag_chain.set_llm_client(self.llm_client)
+        self.rag_chain.set_chat_model(self.chat_model)
+
+    @property
+    def llm_client(self) -> Any | None:
+        """Expose the legacy client only for compatibility with old callers."""
+
+        return self._legacy_llm_client
+
+    @llm_client.setter
+    def llm_client(self, client: Any) -> None:
+        self._legacy_llm_client = client
+        self.chat_model = ensure_chat_model(client)
+        if hasattr(self, "rag_chain"):
+            self.rag_chain.set_chat_model(self.chat_model)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:

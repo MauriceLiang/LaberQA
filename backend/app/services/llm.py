@@ -7,62 +7,12 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
 import httpx
-from langchain_core.messages import BaseMessage
-from langchain_core.runnables import Runnable
 
 from app.core.config import Settings, settings
 
 
 class ModelUnavailableError(RuntimeError):
     """Raised when the configured chat model cannot complete a request."""
-
-
-class LlmRunnable(Runnable[Any, str]):
-    """Adapt the project's OpenAI-compatible client to LangChain Runnable."""
-
-    def __init__(self, client: LlmClient, *, json_mode: bool = False) -> None:
-        self.client = client
-        self.json_mode = json_mode
-
-    def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> str:
-        del input, config, kwargs
-        raise RuntimeError("LlmRunnable requires the asynchronous interface")
-
-    async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> str:
-        del config, kwargs
-        return await self.client.complete(
-            messages_to_dicts(input), json_mode=self.json_mode
-        )
-
-    async def astream(
-        self, input: Any, config: Any = None, **kwargs: Any
-    ) -> AsyncIterator[str]:
-        del config, kwargs
-        async for token in self.client.stream(messages_to_dicts(input)):
-            yield token
-
-
-def messages_to_dicts(value: Any) -> list[dict[str, str]]:
-    """Convert LangChain prompt messages to the client's wire format."""
-
-    messages = value.messages if hasattr(value, "messages") else value
-    result: list[dict[str, str]] = []
-    for message in messages:
-        if isinstance(message, Mapping):
-            role = str(message.get("role", "user"))
-            content = message.get("content", "")
-        elif isinstance(message, BaseMessage):
-            role = {
-                "human": "user",
-                "ai": "assistant",
-            }.get(message.type, message.type)
-            content = message.content
-        else:
-            raise TypeError("Unsupported LangChain message type")
-        if not isinstance(content, str):
-            content = json.dumps(content, ensure_ascii=False)
-        result.append({"role": role, "content": content})
-    return result
 
 
 class LlmClient:
