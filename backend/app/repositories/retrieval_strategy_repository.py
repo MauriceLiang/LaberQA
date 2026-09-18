@@ -45,7 +45,9 @@ class RetrievalStrategyRepository:
                     (strategy["builtin_key"],),
                 )
 
-    def list_strategies(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+    def list_strategies(
+        self, *, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
         with self._connection() as connection:
             archived_filter = "" if include_archived else "WHERE archived_at IS NULL"
             rows = connection.execute(
@@ -155,9 +157,7 @@ class RetrievalStrategyRepository:
             ).fetchall()
             return [self._version_item(row) for row in rows]
 
-    def restore_version(
-        self, strategy_id: int, version: int
-    ) -> dict[str, Any] | None:
+    def restore_version(self, strategy_id: int, version: int) -> dict[str, Any] | None:
         with self._connection() as connection:
             current = connection.execute(
                 "SELECT * FROM retrieval_strategy WHERE id = ? AND is_builtin = 0",

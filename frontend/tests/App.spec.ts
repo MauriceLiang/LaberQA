@@ -57,6 +57,13 @@ beforeEach(() => {
 })
 
 describe('App session navigation', () => {
+  it('uses the correct LaborQA product name', async () => {
+    const { wrapper } = await mountApp()
+
+    expect(wrapper.get('.brand-lockup').text()).toContain('LaborQA')
+    wrapper.unmount()
+  })
+
   it('loads recent sessions and selects the clicked conversation', async () => {
     const { wrapper, router } = await mountApp()
 

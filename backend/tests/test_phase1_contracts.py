@@ -4,12 +4,19 @@ import unittest
 from pathlib import Path
 
 import httpx
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
 from app.main import app
+from app.rag.embeddings import LangChainEmbeddingService
+from app.rag.errors import EmbeddingUnavailableError
 from app.repositories.evaluation_repository import EvaluationRepository
-from app.repositories.retrieval_experiment_repository import RetrievalExperimentRepository
+from app.repositories.retrieval_experiment_repository import (
+    RetrievalExperimentRepository,
+)
 from app.repositories.retrieval_strategy_repository import RetrievalStrategyRepository
 from app.schemas.contracts import (
     EvaluationCase,
@@ -18,9 +25,6 @@ from app.schemas.contracts import (
     RetrievalStrategyUpdate,
 )
 from app.services.retrieval_experiment_service import RetrievalExperimentService
-from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -218,7 +222,7 @@ class Phase1ContractTests(unittest.TestCase):
         with httpx.Client(
             transport=httpx.MockTransport(lambda request: httpx.Response(503))
         ) as client:
-            service = EmbeddingService(config, api_client=client)
+            service = LangChainEmbeddingService(config, api_client=client)
             with self.assertRaises(EmbeddingUnavailableError):
                 service.embed_documents(["测试文本"])
 
@@ -406,7 +410,9 @@ class Phase1ContractTests(unittest.TestCase):
         self.assertEqual(created["version"], 1)
         updated = service.update_strategy(
             created["id"],
-            RetrievalStrategyUpdate(name="版本策略 v2", description="修改后", config=config),
+            RetrievalStrategyUpdate(
+                name="版本策略 v2", description="修改后", config=config
+            ),
         )
         self.assertEqual(updated["version"], 2)
         self.assertEqual(

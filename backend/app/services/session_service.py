@@ -41,9 +41,7 @@ class SessionService:
         return self._session_item(row) if row is not None else None
 
     def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
-        return [
-            self._session_item(row) for row in self.repository.list_sessions(limit)
-        ]
+        return [self._session_item(row) for row in self.repository.list_sessions(limit)]
 
     def list_messages(self, session_id: UUID | str) -> list[dict[str, Any]]:
         normalized_id = str(session_id)

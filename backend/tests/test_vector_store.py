@@ -2,8 +2,12 @@ import json
 from pathlib import Path
 
 import pytest
+from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
 
 from app.core.config import Settings
+from app.rag.constants import CURRENT_SPLITTER_VERSION
 from app.schemas.contracts import EmbeddingSignature
 from app.services import vector_store as vector_store_module
 from app.services.vector_store import (
@@ -12,6 +16,14 @@ from app.services.vector_store import (
     VectorStoreService,
     VectorStoreSignatureMismatch,
 )
+
+
+class FakeLangChainEmbeddings(Embeddings):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] if text == "劳动合同" else [0.0, 1.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [1.0, 0.0] if text == "合同" else [0.0, 1.0]
 
 
 def make_config(
@@ -47,6 +59,7 @@ def test_add_search_remove_and_reload(tmp_path: Path) -> None:
     assert meta["normalize_embeddings"] is True
     assert meta["chunk_size"] == 600
     assert meta["chunk_overlap"] == 100
+    assert meta["splitter_version"] == CURRENT_SPLITTER_VERSION
     assert meta["created_at"]
 
     reloaded = VectorStoreService(make_config(), index_dir=tmp_path / "production")
@@ -54,6 +67,34 @@ def test_add_search_remove_and_reload(tmp_path: Path) -> None:
     assert reloaded.search([1.0, 0.0], 1) == [(101, 1.0)]
     reloaded.remove([101])
     assert reloaded.search([1.0, 0.0], 2) == [(102, 0.5)]
+
+
+def test_macos_search_uses_the_openmp_free_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = VectorStoreService(make_config(), index_dir=tmp_path / "production")
+    store.add([(101, [1.0, 0.0])])
+    fallback_calls = 0
+
+    def fake_search_without_openmp(
+        _index: object, _query: object, _count: int
+    ) -> tuple[object, object]:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return (
+            vector_store_module.np.asarray([[1.0]], dtype="float32"),
+            vector_store_module.np.asarray([[101]], dtype="int64"),
+        )
+
+    monkeypatch.setattr(vector_store_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        VectorStoreService,
+        "_search_without_openmp",
+        staticmethod(fake_search_without_openmp),
+    )
+
+    assert store.search([1.0, 0.0], 1) == [(101, 1.0)]
+    assert fallback_calls == 1
 
 
 def test_signature_mismatch_is_exposed_instead_of_loading_index(
@@ -73,6 +114,35 @@ def test_signature_mismatch_is_exposed_instead_of_loading_index(
     reloaded = VectorStoreService(make_config(), index_dir=index_dir)
     assert reloaded.load() is True
     assert reloaded.search([1.0, 0.0], 10) == [(1, 1.0)]
+
+
+def test_unknown_splitter_version_rejects_persisted_index(tmp_path: Path) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+    meta_path = index_dir / "index_meta.json"
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    metadata["splitter_version"] = "different-splitter-v2"
+    meta_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    incompatible = VectorStoreService(make_config(), index_dir=index_dir)
+    with pytest.raises(VectorStoreSignatureMismatch):
+        incompatible.load()
+    assert incompatible.status == "incompatible"
+
+
+def test_metadata_without_splitter_version_loads_as_compatible_legacy(
+    tmp_path: Path,
+) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+    meta_path = index_dir / "index_meta.json"
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    metadata.pop("splitter_version")
+    meta_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    legacy = VectorStoreService(make_config(), index_dir=index_dir)
+    assert legacy.load() is True
+    assert legacy.search([1.0, 0.0], 1) == [(1, 1.0)]
 
 
 @pytest.mark.parametrize(
@@ -200,3 +270,53 @@ def test_failed_metadata_replace_restores_previous_index(
     reloaded = VectorStoreService(make_config(), index_dir=index_dir)
     assert reloaded.load() is True
     assert reloaded.search([1.0, 0.0], 10) == [(1, 1.0)]
+
+
+def test_vector_store_implements_langchain_interface_and_preserves_documents(
+    tmp_path: Path,
+) -> None:
+    embedding = FakeLangChainEmbeddings()
+    store = VectorStoreService.from_texts(
+        ["劳动合同", "工资支付"],
+        embedding,
+        metadatas=[{"document_id": 8}, {"document_id": 9}],
+        ids=["101", "102"],
+        config=make_config(),
+        index_dir=tmp_path / "production",
+    )
+
+    assert isinstance(store, VectorStore)
+    documents = store.similarity_search("合同", k=2)
+    assert [document.id for document in documents] == ["101", "102"]
+    assert documents[0].metadata["document_id"] == 8
+    assert documents[0].metadata["chunk_id"] == 101
+    assert documents[0].metadata["score"] == pytest.approx(1.0)
+    assert documents[0].metadata["retrieval_score"] == pytest.approx(1.0)
+    assert store._langchain_store is not None
+    assert store._langchain_store.index_to_docstore_id == {101: "101", 102: "102"}
+    filtered = store.similarity_search(
+        "合同", k=2, filter={"document_id": 8}, score_threshold=0.9
+    )
+    assert [document.id for document in filtered] == ["101"]
+
+
+def test_add_documents_accepts_precomputed_vectors_and_stable_chunk_metadata(
+    tmp_path: Path,
+) -> None:
+    store = VectorStoreService(make_config(), index_dir=tmp_path / "production")
+    documents = [
+        Document(
+            id="201",
+            page_content="劳动关系",
+            metadata={"document_id": 10, "chunk_no": 1},
+        )
+    ]
+
+    assert store.add_documents(documents, vectors=[[1.0, 0.0]]) == ["201"]
+    result = store.similarity_search_by_vector([1.0, 0.0], k=1)
+    assert result[0].page_content == "劳动关系"
+    assert result[0].metadata["document_id"] == 10
+    assert result[0].metadata["chunk_no"] == 1
+    assert result[0].metadata["chunk_id"] == 201
+    assert result[0].metadata["score"] == pytest.approx(1.0)
+    assert result[0].metadata["retrieval_score"] == pytest.approx(1.0)

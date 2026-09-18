@@ -6,12 +6,17 @@ import logging
 from threading import RLock
 from typing import BinaryIO
 
+from langchain_core.documents import Document
+
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.embeddings import LangChainEmbeddingService
+from app.rag.errors import EmbeddingUnavailableError
+from app.rag.loaders import LaborQADocumentLoader
+from app.rag.splitters import LegalTextSplitter
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_parser import ParserFactory, is_doc_parser_available
-from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 from app.services.file_storage import (
     DocumentConverterUnavailable,
     DocumentParseError,
@@ -19,7 +24,6 @@ from app.services.file_storage import (
     FileStorage,
     UploadValidationError,
 )
-from app.services.text import TextChunker, TextCleaner
 from app.services.vector_store import VectorStoreError, VectorStoreService
 
 logger = logging.getLogger(__name__)
@@ -34,7 +38,7 @@ class DocumentService:
         repository: DocumentRepository | None = None,
         file_storage: FileStorage | None = None,
         parser: type[ParserFactory] = ParserFactory,
-        embedding_service: EmbeddingService | None = None,
+        embedding_service: LangChainEmbeddingService | None = None,
         vector_store: VectorStoreService | None = None,
     ) -> None:
         self.config = config
@@ -43,13 +47,13 @@ class DocumentService:
             config.upload_path, max_size_bytes=config.max_upload_size_mb * 1024 * 1024
         )
         self.parser = parser
-        self.embedding_service = embedding_service or EmbeddingService(config)
+        self.embedding_service = embedding_service or LangChainEmbeddingService(config)
         self.vector_store = vector_store or VectorStoreService(
             config=config,
             embedding_service=self.embedding_service,
             index_dir=config.faiss_path / "production",
         )
-        self.chunker = TextChunker(config.chunk_size, config.chunk_overlap)
+        self.splitter = LegalTextSplitter(config.chunk_size, config.chunk_overlap)
         self._import_lock = RLock()
 
     def upload(
@@ -86,7 +90,9 @@ class DocumentService:
         with self._import_lock:
             document = self.repository.get_document(document_id)
             if document is None:
-                raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+                raise AppError(
+                    ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404
+                )
             if document["status"] != "FAILED":
                 raise AppError(
                     ErrorCode.INVALID_DOCUMENT_STATE,
@@ -108,10 +114,14 @@ class DocumentService:
         with self._import_lock:
             deleted = self.repository.delete_document(document_id)
             if deleted is None:
-                raise AppError(ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404)
+                raise AppError(
+                    ErrorCode.DOCUMENT_NOT_FOUND, "文档不存在", http_status=404
+                )
 
             document = deleted["document"]
-            self._remove_vectors(deleted["chunk_ids"], "vectors after document deletion")
+            self._remove_vectors(
+                deleted["chunk_ids"], "vectors after document deletion"
+            )
             try:
                 self.file_storage.delete(document["file_path"])
             except Exception:
@@ -133,23 +143,13 @@ class DocumentService:
             inserted_rows: list[dict] = []
             added_vector_ids: list[int] = []
             try:
-                if self.parser is ParserFactory:
-                    source_text = self.parser.parse(
-                        document["file_path"],
-                        document["file_type"],
-                        config=self.config,
-                    )
-                else:
-                    source_text = self.parser.parse(
-                        document["file_path"], document["file_type"]
-                    )
-                cleaned_text = TextCleaner.clean(source_text)
-                chunks = self.chunker.chunk(cleaned_text)
+                source_documents = self._load_documents(document)
+                chunks = self.splitter.split_documents(source_documents)
                 if not chunks:
                     raise EmptyFileError()
 
                 vectors = self.embedding_service.embed_documents(
-                    [chunk.content for chunk in chunks]
+                    [chunk.page_content for chunk in chunks]
                 )
                 if len(vectors) != len(chunks):
                     raise EmbeddingUnavailableError("向量服务返回的结果数量不正确")
@@ -157,16 +157,33 @@ class DocumentService:
                 inserted_rows = self.repository.insert_chunks(
                     document_id,
                     [
-                        {"chunk_no": chunk.chunk_no, "content": chunk.content}
+                        {
+                            "chunk_no": int(chunk.metadata["chunk_no"]),
+                            "content": chunk.page_content,
+                        }
                         for chunk in chunks
                     ],
                 )
-                vector_pairs = [
-                    (row["id"], vector)
-                    for row, vector in zip(inserted_rows, vectors, strict=True)
+                vector_documents = [
+                    Document(
+                        id=str(row["id"]),
+                        page_content=chunk.page_content,
+                        metadata={
+                            "chunk_id": int(row["id"]),
+                            "document_id": document_id,
+                            "file_name": str(document["file_name"]),
+                            "file_type": str(document["file_type"]),
+                            "chunk_no": int(row["chunk_no"]),
+                        },
+                    )
+                    for row, chunk in zip(inserted_rows, chunks, strict=True)
                 ]
-                self.vector_store.add(vector_pairs)
-                added_vector_ids = [row["id"] for row in inserted_rows]
+                added_ids = self.vector_store.add_documents(
+                    vector_documents,
+                    vectors=vectors,
+                    ids=[str(row["id"]) for row in inserted_rows],
+                )
+                added_vector_ids = [int(chunk_id) for chunk_id in added_ids]
 
                 updated = self.repository.update_document(
                     document_id,
@@ -189,6 +206,32 @@ class DocumentService:
                 except Exception:
                     logger.exception("Could not mark failed document %s", document_id)
                 logger.exception("Document import failed for document %s", document_id)
+
+    def _load_documents(self, document: dict) -> list[Document]:
+        metadata = {
+            "document_id": int(document["id"]),
+            "file_name": str(document["file_name"]),
+            "file_type": str(document["file_type"]),
+        }
+        if self.parser is ParserFactory:
+            return LaborQADocumentLoader(
+                document["file_path"],
+                document["file_type"],
+                config=self.config,
+                metadata=metadata,
+            ).load()
+
+        source_text = self.parser.parse(document["file_path"], document["file_type"])
+        return [
+            Document(
+                page_content=source_text,
+                metadata={
+                    "source": str(document["file_path"]),
+                    "page": None,
+                    **metadata,
+                },
+            )
+        ]
 
     def recover_interrupted_imports(self) -> None:
         """Mark jobs interrupted by a process restart as failed and clean chunks."""

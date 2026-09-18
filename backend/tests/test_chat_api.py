@@ -1,6 +1,8 @@
 import tempfile
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 from app.api.dependencies import get_chat_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
@@ -9,7 +11,6 @@ from app.services.chat_service import ChatService
 from app.services.missing_knowledge import MissingKnowledgeReason
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
-from fastapi.testclient import TestClient
 
 
 class UnreadyRetrieval:

@@ -2,10 +2,15 @@ import asyncio
 import json
 from typing import Any
 
+import pytest
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
 from app.core.config import Settings
+from app.rag.chains import REFUSAL_TEXT, RagChain
+from app.rag.errors import ModelUnavailableError
 from app.schemas.contracts import AnswerStyle
-from app.services.rag_chain import REFUSAL_TEXT, RagChain
-from app.services.retrieval import LaborKnowledgeRetriever
+from tests.support import AsyncClientChatModel
 
 
 class FakeRetrieval:
@@ -49,6 +54,16 @@ class FakeLlm:
         yield "材料判断。"
 
 
+class BrokenChatModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "broken"
+
+    def _generate(self, *args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise RuntimeError("provider unavailable")
+
+
 def _config() -> Settings:
     return Settings(
         database_url="sqlite:////tmp/rag-chain-test.db",
@@ -58,30 +73,31 @@ def _config() -> Settings:
     )
 
 
-def test_langchain_retriever_preserves_source_metadata() -> None:
+def test_rag_chain_uses_domain_retrieval_service_fallback() -> None:
     retrieval = FakeRetrieval()
-    retriever = LaborKnowledgeRetriever(retrieval_service=retrieval)
+    chain = RagChain(retrieval, AsyncClientChatModel(FakeLlm()), _config())
 
-    documents = asyncio.run(retriever.ainvoke("劳动合同需要签订吗？"))
+    evidence = asyncio.run(chain.retrieve("劳动合同需要签订吗？"))
 
     assert retrieval.queries == ["劳动合同需要签订吗？"]
-    assert len(documents) == 1
-    assert documents[0].page_content == "建立劳动关系后，应当订立书面劳动合同。"
-    assert documents[0].metadata == {
-        "chunk_id": 7,
-        "document_id": 3,
-        "file_name": "劳动合同法.pdf",
-        "chunk_no": 4,
-        "score": 0.91,
-        "retrieval_score": 0.91,
-        "rerank_score": None,
-        "rank_no": 1,
-    }
+    assert evidence == [
+        {
+            "chunk_id": 7,
+            "document_id": 3,
+            "file_name": "劳动合同法.pdf",
+            "chunk_no": 4,
+            "content": "建立劳动关系后，应当订立书面劳动合同。",
+            "score": 0.91,
+            "retrieval_score": 0.91,
+            "rerank_score": None,
+            "rank_no": 1,
+        }
+    ]
 
 
 def test_rag_chain_uses_prompt_runnable_and_preserves_evidence_text() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
     evidence = [
         {
             "chunk_id": 7,
@@ -127,7 +143,7 @@ def test_rag_chain_uses_prompt_runnable_and_preserves_evidence_text() -> None:
 
 def test_evidence_judge_is_a_langchain_prompt_chain() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
     evidence = [
         {
             "chunk_id": 7,
@@ -151,9 +167,56 @@ def test_evidence_judge_is_a_langchain_prompt_chain() -> None:
     assert llm.completions[-1][1] is True
 
 
+def test_rag_chain_accepts_a_base_chat_model_and_parses_json_judgement() -> None:
+    model = FakeListChatModel(
+        responses=['{"sufficient":true,"reason":"evidence supports the answer"}']
+    )
+    chain = RagChain(FakeRetrieval(), model, _config())
+    evidence = [
+        {
+            "chunk_id": 7,
+            "document_id": 3,
+            "file_name": "劳动合同法.pdf",
+            "chunk_no": 4,
+            "content": "建立劳动关系后，应当订立书面劳动合同。",
+            "score": 0.91,
+            "retrieval_score": 0.91,
+            "rerank_score": None,
+            "rank_no": 1,
+        }
+    ]
+
+    refused, reason = asyncio.run(
+        chain.judge_evidence("劳动合同需要签订吗？", evidence, strict=True)
+    )
+
+    assert refused is False
+    assert reason is None
+
+
+def test_rag_chain_converts_provider_failure_to_model_unavailable() -> None:
+    chain = RagChain(FakeRetrieval(), BrokenChatModel(), _config())
+    evidence = [
+        {
+            "chunk_id": 7,
+            "document_id": 3,
+            "file_name": "劳动合同法.pdf",
+            "chunk_no": 4,
+            "content": "建立劳动关系后，应当订立书面劳动合同。",
+            "score": 0.91,
+            "retrieval_score": 0.91,
+            "rerank_score": None,
+            "rank_no": 1,
+        }
+    ]
+
+    with pytest.raises(ModelUnavailableError):
+        asyncio.run(chain.judge_evidence("劳动合同需要签订吗？", evidence, strict=True))
+
+
 def test_runnable_branch_returns_fixed_refusal_without_calling_answer_model() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
 
     answer = asyncio.run(
         chain.complete_answer(

@@ -10,10 +10,10 @@ from app.api.dependencies import get_document_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
 from app.main import app
+from app.rag.errors import EmbeddingUnavailableError
 from app.repositories.document_repository import DocumentRepository
 from app.schemas.contracts import EmbeddingSignature
 from app.services.document_service import DocumentService
-from app.services.embedding import EmbeddingUnavailableError
 from app.services.file_storage import DocumentParseError, FileStorage
 from app.services.vector_store import VectorStoreService
 
@@ -173,7 +173,9 @@ class DocumentApiTests(unittest.TestCase):
         with TestClient(app) as client:
             service = self._service()
             app.state.document_service = service
-            with patch.object(service.vector_store, "add", side_effect=OSError):
+            with patch.object(
+                service.vector_store, "add_documents", side_effect=OSError
+            ):
                 response = client.post(
                     "/api/documents/upload",
                     files={"file": ("law.txt", b"legal text", "text/plain")},

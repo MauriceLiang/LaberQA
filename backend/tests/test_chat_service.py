@@ -14,6 +14,7 @@ from app.services.compliance import COMPLIANCE_NOTICE
 from app.services.missing_knowledge import ExecutionMode, MissingKnowledgeReason
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreNotInitialized
+from tests.support import AsyncClientChatModel
 
 
 class FakeRequest:
@@ -106,7 +107,12 @@ def _service(directory: str, *, score: float = 0.82):
         ]
     )
     llm = FakeLlm()
-    service = ChatService(session_service, retrieval, config, llm_client=llm)
+    service = ChatService(
+        session_service,
+        retrieval,
+        config,
+        chat_model=AsyncClientChatModel(llm),
+    )
     return service, session_service, retrieval, llm
 
 
@@ -234,7 +240,8 @@ def test_insufficient_evidence_judgement_is_recorded() -> None:
 
     with tempfile.TemporaryDirectory() as directory:
         service, sessions, _, _ = _service(directory)
-        service.llm_client = InsufficientJudge()
+        service.chat_model = AsyncClientChatModel(InsufficientJudge())
+        service.rag_chain.set_chat_model(service.chat_model)
         record = Mock(wraps=service.missing_knowledge_service.record_refusal)
         service.missing_knowledge_service.record_refusal = record
         session = sessions.create_session()
@@ -268,7 +275,8 @@ def test_evidence_judge_failure_refuses_without_recording_missing_knowledge() ->
 
     with tempfile.TemporaryDirectory() as directory:
         service, sessions, _, _ = _service(directory)
-        service.llm_client = BrokenJudge()
+        service.chat_model = AsyncClientChatModel(BrokenJudge())
+        service.rag_chain.set_chat_model(service.chat_model)
         session = sessions.create_session()
 
         events = _events(service, session["id"])
@@ -355,7 +363,8 @@ def test_client_disconnect_does_not_persist_partial_assistant_message() -> None:
 def test_empty_model_stream_emits_a_terminal_error() -> None:
     with tempfile.TemporaryDirectory() as directory:
         service, sessions, _, _ = _service(directory)
-        service.llm_client = EmptyStreamLlm()
+        service.chat_model = AsyncClientChatModel(EmptyStreamLlm())
+        service.rag_chain.set_chat_model(service.chat_model)
         session = sessions.create_session()
 
         events = _events(service, session["id"])
@@ -485,7 +494,8 @@ def test_concrete_route_in_final_answer_adds_notice_even_if_question_did_not():
     with tempfile.TemporaryDirectory() as directory:
         service, sessions, _, _ = _service(directory)
         llm = RouteAnswerLlm()
-        service.llm_client = llm
+        service.chat_model = AsyncClientChatModel(llm)
+        service.rag_chain.set_chat_model(service.chat_model)
         session = sessions.create_session()
 
         events = _events(service, session["id"], question="我现在应该如何处理？")
