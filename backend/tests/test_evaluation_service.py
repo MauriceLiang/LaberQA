@@ -143,6 +143,19 @@ def test_run_executes_subset_calculates_metrics_and_does_not_write_chat_tables()
             EvaluationRunCreate(name="subset", case_ids=[1, 41], answer_style="legal")
         )
 
+        config_snapshot = service.get_run(run["id"])["config"]
+        assert config_snapshot["langchain_version"]
+        assert config_snapshot["chat_provider"] == "langchain_openai.ChatOpenAI"
+        assert config_snapshot["splitter_type"] == (
+            "app.rag.splitters.LegalTextSplitter"
+        )
+        assert config_snapshot["splitter_version"] == "legal-text-splitter-v1"
+        assert config_snapshot["vectorstore_type"] == (
+            "langchain_community.vectorstores.FAISS"
+        )
+        assert config_snapshot["retrieval_type"] == "similarity"
+        assert config_snapshot["rerank_model"] is None
+
         asyncio.run(service.execute_run(run["id"]))
 
         detail = service.get_run(run["id"])

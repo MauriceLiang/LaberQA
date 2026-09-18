@@ -59,6 +59,8 @@ function runDetail(
   return {
     ...runSummary(status),
     config: {
+      langchain_version: '1.6.3',
+      chat_provider: 'langchain_openai.ChatOpenAI',
       answer_style: 'plain',
       case_scope: 'BUILTIN_BASELINE',
       llm_model: 'test-model',
@@ -67,7 +69,12 @@ function runDetail(
       embedding_provider: 'local',
       embedding_model: 'BAAI/bge-small-zh-v1.5',
       embedding_normalize: true,
-      prompt_version: 'labor_v1',
+      splitter_type: 'app.rag.splitters.LegalTextSplitter',
+      splitter_version: 'legal-text-splitter-v1',
+      vectorstore_type: 'langchain_community.vectorstores.FAISS',
+      retrieval_type: 'similarity',
+      rerank_model: null,
+      prompt_version: 'labor_langchain_v1',
       chunk_size: 600,
       chunk_overlap: 100,
       top_k: 5,

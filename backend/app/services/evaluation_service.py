@@ -15,6 +15,7 @@ from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.rag.providers import ensure_chat_model
+from app.rag.runtime_config import runtime_config_snapshot
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.schemas.contracts import (
     AnswerStyle,
@@ -186,15 +187,11 @@ class EvaluationService:
                 http_status=400,
             )
         snapshot = {
+            **runtime_config_snapshot(self.config),
             "answer_style": payload.answer_style.value,
             "case_scope": case_scope.value,
-            "llm_model": self.config.llm_model,
             "evaluator_model": self.config.llm_model,
             "evaluator_prompt_version": _EVALUATOR_PROMPT_VERSION,
-            "embedding_provider": self.config.embedding_provider,
-            "embedding_model": self.config.embedding_model,
-            "embedding_normalize": self.config.embedding_normalize,
-            "prompt_version": "labor_langchain_v1",
             "chunk_size": self.config.chunk_size,
             "chunk_overlap": self.config.chunk_overlap,
             "top_k": self.config.rag_top_k,
@@ -220,6 +217,10 @@ class EvaluationService:
                 "评测批次不存在",
                 http_status=404,
             )
+        run["config"] = {
+            **runtime_config_snapshot(self.config),
+            **run["config"],
+        }
         return run
 
     def delete_run(self, run_id: int) -> None:

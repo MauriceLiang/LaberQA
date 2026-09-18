@@ -11,6 +11,7 @@ from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.rag.loaders import LaborQADocumentLoader
+from app.rag.runtime_config import runtime_config_snapshot
 from app.rag.splitters import LegalTextSplitter
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.evaluation_repository import EvaluationRepository
@@ -553,6 +554,7 @@ class RetrievalExperimentService:
             "config_names": payload.config_names
             or [f"配置 {index + 1}" for index in range(len(payload.configs))],
             "embedding_signature": signature.model_dump(mode="json"),
+            "runtime_config": runtime_config_snapshot(self.config),
         }
         return self.repository.create_experiment(
             payload.name,
@@ -645,6 +647,10 @@ class RetrievalExperimentService:
         return {
             **experiment,
             "embedding_signature": experiment["snapshot"]["embedding_signature"],
+            "runtime_config": {
+                **runtime_config_snapshot(self.config),
+                **experiment["snapshot"].get("runtime_config", {}),
+            },
             "config_names": experiment["snapshot"].get("config_names", []),
             "config_results": config_results,
         }

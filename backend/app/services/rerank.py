@@ -11,7 +11,8 @@ from typing import Any, Protocol
 from app.core.config import Settings, settings
 
 logger = logging.getLogger(__name__)
-_DEFAULT_MODEL = "BAAI/bge-reranker-base"
+DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-base"
+_DEFAULT_MODEL = DEFAULT_RERANK_MODEL
 
 
 class CrossEncoder(Protocol):

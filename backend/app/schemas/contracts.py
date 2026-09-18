@@ -271,16 +271,26 @@ class EvaluationRunSummary(JobProgress):
     updated_at: UtcDateTime
 
 
-class EvaluationRunConfig(ApiModel):
-    answer_style: AnswerStyle
-    case_scope: EvaluationCaseScope | None = None
+class LangChainRuntimeConfig(ApiModel):
+    langchain_version: str
+    chat_provider: str
     llm_model: str
-    evaluator_model: str
-    evaluator_prompt_version: str
     embedding_provider: Literal["local", "api"]
     embedding_model: str
     embedding_normalize: bool
+    splitter_type: str
+    splitter_version: str
+    vectorstore_type: str
+    retrieval_type: str
+    rerank_model: str | None
     prompt_version: str
+
+
+class EvaluationRunConfig(LangChainRuntimeConfig):
+    answer_style: AnswerStyle
+    case_scope: EvaluationCaseScope | None = None
+    evaluator_model: str
+    evaluator_prompt_version: str
     chunk_size: int
     chunk_overlap: int
     top_k: int
@@ -455,6 +465,7 @@ class ExperimentDetail(JobProgress):
     id: int
     name: str
     embedding_signature: EmbeddingSignature
+    runtime_config: LangChainRuntimeConfig
     archived_at: UtcDateTime | None = None
     best_config_index: int | None
     config_names: list[str] = Field(default_factory=list)
