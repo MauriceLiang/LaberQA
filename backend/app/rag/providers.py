@@ -1,9 +1,4 @@
-"""Factories for LangChain chat-model and embedding providers.
-
-The factories are additive during the migration. Existing services continue to
-own the current HTTP and SentenceTransformer adapters until later batches move
-their call sites to these interfaces.
-"""
+"""Factories and compatibility adapters for LangChain model providers."""
 
 from __future__ import annotations
 
@@ -12,10 +7,12 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from pydantic import SecretStr
 
 from app.core.config import Settings, settings
 
@@ -33,7 +30,11 @@ def build_chat_model(config: Settings = settings) -> BaseChatModel:
     )
 
 
-def build_embeddings(config: Settings = settings) -> Embeddings:
+def build_embeddings(
+    config: Settings = settings,
+    *,
+    http_client: Any | None = None,
+) -> Embeddings:
     """Build the configured LangChain embedding implementation."""
     if config.embedding_provider == "local":
         from langchain_huggingface import HuggingFaceEmbeddings
@@ -47,13 +48,59 @@ def build_embeddings(config: Settings = settings) -> Embeddings:
             },
         )
 
-    from langchain_openai import OpenAIEmbeddings
-
-    return OpenAIEmbeddings(
+    return CompatibleEmbeddings(
         model=config.embedding_api_model,
         api_key=config.embedding_api_key,
-        base_url=_without_endpoint_suffix(config.embedding_base_url, "/embeddings"),
+        base_url=config.embedding_base_url,
+        http_client=http_client,
     )
+
+
+class CompatibleEmbeddings(Embeddings):
+    """OpenAI-compatible embeddings without model-specific tokenization.
+
+    The configured service already receives bounded domain chunks. Sending
+    those strings directly also keeps compatibility with providers that do not
+    accept newer OpenAI SDK parameters such as ``encoding_format``.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        api_key: str,
+        base_url: str,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        self.model = model
+        self.openai_api_key = SecretStr(api_key)
+        self.openai_api_base = _without_endpoint_suffix(base_url, "/embeddings")
+        self._client = http_client
+
+    @property
+    def endpoint(self) -> str:
+        return f"{self.openai_api_base}/embeddings"
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        post = self._client.post if self._client is not None else httpx.post
+        response = post(
+            self.endpoint,
+            headers={
+                "Authorization": f"Bearer {self.openai_api_key.get_secret_value()}"
+            },
+            json={"model": self.model, "input": texts},
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        data = payload["data"]
+        if not isinstance(data, list) or len(data) != len(texts):
+            raise ValueError("embedding response item count does not match request")
+        ordered = sorted(data, key=lambda item: item.get("index", 0))
+        return [item["embedding"] for item in ordered]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
 
 
 def ensure_chat_model(provider: BaseChatModel | Any) -> BaseChatModel:

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from langchain_core.embeddings import Embeddings
 
 from app.core.config import Settings, settings
 from app.services.embedding import (
@@ -93,9 +94,7 @@ class LocalEmbeddingProviderTests(unittest.TestCase):
             def tolist(self) -> list[list[float]]:
                 return list(self)
 
-        with patch(
-            "app.services.embedding._load_model", return_value=Model()
-        ):
+        with patch("app.services.embedding._load_model", return_value=Model()):
             config = Settings(
                 local_embedding_model="local-test",
                 local_embedding_device="cpu",
@@ -115,6 +114,35 @@ class LocalEmbeddingProviderTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "不能为空"):
             service.embed_query("  ")
+
+
+class LangChainEmbeddingServiceTests(unittest.TestCase):
+    def test_default_service_builds_langchain_embeddings_lazily(self) -> None:
+        class FakeEmbeddings(Embeddings):
+            def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                return [[1.0, 0.0] for _ in texts]
+
+            def embed_query(self, text: str) -> list[float]:
+                return [1.0, 0.0]
+
+        config = Settings(
+            _env_file=None,
+            embedding_provider="local",
+            embedding_normalize=False,
+        )
+        with patch(
+            "app.services.embedding.build_embeddings",
+            return_value=FakeEmbeddings(),
+        ) as factory:
+            service = EmbeddingService(config)
+            self.assertIsInstance(service, Embeddings)
+            self.assertIsInstance(service.embeddings, Embeddings)
+            factory.assert_not_called()
+
+            self.assertEqual(service.embed_query("测试"), [1.0, 0.0])
+
+        factory.assert_called_once_with(config, http_client=None)
+        self.assertEqual(service.signature().embedding_dimension, 2)
 
 
 @pytest.mark.skipif(
