@@ -102,6 +102,23 @@ npm run dev
 
 前端地址：<http://127.0.0.1:5173>
 
+## Docker 部署
+
+LaborQA 支持 Docker Compose 单服务器部署。服务器只需要安装 Docker Engine 和 Docker Compose v2，后端、Nginx、LibreOffice、Python、Node.js 以及本地模型运行环境都由容器提供。
+
+首次部署：
+
+```bash
+cp deploy/.env.example deploy/.env
+mkdir -p data uploads model-cache backups
+# 编辑 deploy/.env，填写 LLM_API_KEY、LLM_BASE_URL 和 LLM_MODEL
+docker compose up -d --build
+```
+
+服务启动后访问：<http://localhost/>
+
+部署、数据持久化、备份、恢复、升级和回滚流程见 [`deploy/README.md`](deploy/README.md)。本地开发仍使用上面的 Python 虚拟环境和 Vite 命令。
+
 ## 首次使用
 
 项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。

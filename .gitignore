@@ -16,4 +16,7 @@ __pycache__/
 /frontend/.env
 /data/
 /uploads/
+/model-cache/
+/backups/
+/deploy/.env
 /design-qa.md
