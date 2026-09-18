@@ -5,9 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.documents import Document
+
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.loaders import LaberQADocumentLoader
+from app.rag.splitters import LegalTextSplitter
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.repositories.retrieval_experiment_repository import (
@@ -41,7 +45,6 @@ from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import ExecutionMode
 from app.services.rerank import RerankService
 from app.services.retrieval import RetrievalService
-from app.services.text import TextChunker
 from app.services.vector_store import (
     VectorStoreNotInitialized,
     VectorStorePersistenceError,
@@ -103,7 +106,9 @@ class RetrievalExperimentService:
         self.repository.recover_interrupted_experiments()
         self.strategy_repository.seed_builtins(_builtin_strategies())
 
-    def list_strategies(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+    def list_strategies(
+        self, *, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
         return self.strategy_repository.list_strategies(
             include_archived=include_archived
         )
@@ -180,9 +185,7 @@ class RetrievalExperimentService:
             )
         return restored
 
-    def set_strategy_active(
-        self, strategy_id: int, active: bool
-    ) -> dict[str, Any]:
+    def set_strategy_active(self, strategy_id: int, active: bool) -> dict[str, Any]:
         current = self.strategy_repository.get_strategy(strategy_id)
         if current is None:
             raise AppError(
@@ -418,11 +421,14 @@ class RetrievalExperimentService:
             (float(item["retrieval_score"]) for item in retrieved_sources),
             default=0.0,
         )
-        score_summary = "；".join(
-            f"#{int(item['rank_no'])} {item['file_name']} "
-            f"检索分 {float(item['retrieval_score']):.3f}"
-            for item in retrieved_sources
-        ) or "没有候选片段"
+        score_summary = (
+            "；".join(
+                f"#{int(item['rank_no'])} {item['file_name']} "
+                f"检索分 {float(item['retrieval_score']):.3f}"
+                for item in retrieved_sources
+            )
+            or "没有候选片段"
+        )
         return {
             "question": payload.question,
             "rewritten_question": output["rewritten_question"],
@@ -447,7 +453,9 @@ class RetrievalExperimentService:
                 },
                 {
                     "stage": "重排",
-                    "status": "completed" if payload.config.rerank_enabled else "skipped",
+                    "status": "completed"
+                    if payload.config.rerank_enabled
+                    else "skipped",
                     "detail": (
                         f"已保留重排后的前 {payload.config.rerank_top_n} 个片段"
                         if payload.config.rerank_enabled
@@ -471,7 +479,9 @@ class RetrievalExperimentService:
                 },
                 {
                     "stage": "最终上下文",
-                    "status": "completed" if not refused and retrieved_sources else "skipped",
+                    "status": "completed"
+                    if not refused and retrieved_sources
+                    else "skipped",
                     "detail": (
                         f"回答生成使用 {len(retrieved_sources)} 个候选片段"
                         if not refused and retrieved_sources
@@ -608,7 +618,9 @@ class RetrievalExperimentService:
                     _export_bool(result["source_hit"]),
                     _export_bool(result["correct"]),
                     _export_bool(result["refused"]),
-                    result["retrieval_ms"] if result["retrieval_ms"] is not None else "",
+                    result["retrieval_ms"]
+                    if result["retrieval_ms"] is not None
+                    else "",
                     source_files,
                 ]
             )
@@ -799,23 +811,47 @@ class RetrievalExperimentService:
     def _chunk_success_documents(
         self, config: ExperimentConfig
     ) -> list[dict[str, Any]]:
-        chunker = TextChunker(config.chunk_size, config.chunk_overlap)
+        splitter = LegalTextSplitter(config.chunk_size, config.chunk_overlap)
         chunks: list[dict[str, Any]] = []
         for document in self.document_repository.list_success_documents():
-            source_text = self.parser.parse(
-                document["file_path"], document["file_type"]
-            )
-            for chunk in chunker.chunk(source_text):
+            source_documents = self._load_documents(document)
+            for chunk in splitter.split_documents(source_documents):
                 chunks.append(
                     {
                         "id": len(chunks) + 1,
                         "document_id": int(document["id"]),
                         "file_name": str(document["file_name"]),
-                        "chunk_no": chunk.chunk_no,
-                        "content": chunk.content,
+                        "chunk_no": int(chunk.metadata["chunk_no"]),
+                        "content": chunk.page_content,
                     }
                 )
         return chunks
+
+    def _load_documents(self, document: dict[str, Any]) -> list[Document]:
+        metadata = {
+            "document_id": int(document["id"]),
+            "file_name": str(document["file_name"]),
+            "file_type": str(document["file_type"]),
+        }
+        if self.parser is ParserFactory:
+            return LaberQADocumentLoader(
+                document["file_path"],
+                document["file_type"],
+                config=self.config,
+                metadata=metadata,
+            ).load()
+
+        source_text = self.parser.parse(document["file_path"], document["file_type"])
+        return [
+            Document(
+                page_content=source_text,
+                metadata={
+                    "source": str(document["file_path"]),
+                    "page": None,
+                    **metadata,
+                },
+            )
+        ]
 
     def _build_chat_service(
         self,
@@ -1029,15 +1065,11 @@ def _failed_result(config_index: int, case_id: int, message: str) -> dict[str, A
     }
 
 
-def _snapshot_cases(
-    snapshot: dict[str, Any], repository: Any
-) -> list[dict[str, Any]]:
+def _snapshot_cases(snapshot: dict[str, Any], repository: Any) -> list[dict[str, Any]]:
     case_snapshots = snapshot.get("case_snapshots")
     if isinstance(case_snapshots, list) and case_snapshots:
         return case_snapshots
-    return repository.get_cases(
-        snapshot.get("case_ids"), include_archived=True
-    )
+    return repository.get_cases(snapshot.get("case_ids"), include_archived=True)
 
 
 def _calculate_config_results(

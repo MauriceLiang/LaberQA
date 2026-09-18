@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -39,9 +41,12 @@ def build_embeddings(
     if config.embedding_provider == "local":
         from langchain_huggingface import HuggingFaceEmbeddings
 
+        _configure_local_torch_runtime()
         return HuggingFaceEmbeddings(
-            model_name=config.local_embedding_model,
-            model_kwargs={"device": config.local_embedding_device},
+            model_name=_resolve_local_model(config.local_embedding_model),
+            model_kwargs={
+                "device": _resolve_local_device(config.local_embedding_device)
+            },
             encode_kwargs={
                 "normalize_embeddings": config.embedding_normalize,
                 "batch_size": config.embedding_batch_size,
@@ -54,6 +59,44 @@ def build_embeddings(
         base_url=config.embedding_base_url,
         http_client=http_client,
     )
+
+
+def _resolve_local_model(model_name: str) -> str:
+    local_path = Path(model_name).expanduser()
+    if local_path.exists():
+        return str(local_path)
+
+    try:
+        from huggingface_hub import snapshot_download
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        return snapshot_download(model_name, local_files_only=True)
+    except (LocalEntryNotFoundError, OSError):
+        return model_name
+
+
+def _resolve_local_device(device: str) -> str:
+    if device != "auto":
+        return device
+
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _configure_local_torch_runtime() -> None:
+    if sys.platform != "darwin":
+        return
+
+    import torch
+
+    # PyTorch and faiss-cpu bundle different OpenMP runtimes on macOS. Keeping
+    # PyTorch inference single-threaded prevents native worker-pool corruption.
+    torch.set_num_threads(1)
 
 
 class CompatibleEmbeddings(Embeddings):

@@ -46,9 +46,7 @@ class FixedLlm:
             return '{"sufficient":true,"reason":"fixed evidence supports answer"}'
         return BASELINE_ANSWER
 
-    async def stream(
-        self, messages: list[dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         self.streams.append(messages)
         yield "根据《劳动合同法》，"
         yield "用人单位应当订立书面劳动合同。"

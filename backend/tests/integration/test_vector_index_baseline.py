@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
+from app.rag.constants import CURRENT_SPLITTER_VERSION
 from app.services.vector_store import VectorStoreService, VectorStoreSignatureMismatch
 
 
@@ -31,6 +32,7 @@ def test_fixed_embeddings_persist_and_reject_incompatible_configuration(
     assert metadata["embedding_dimension"] == 2
     assert metadata["chunk_size"] == baseline_config.chunk_size
     assert metadata["chunk_overlap"] == baseline_config.chunk_overlap
+    assert metadata["splitter_version"] == CURRENT_SPLITTER_VERSION
 
     reloaded = VectorStoreService(
         baseline_config,

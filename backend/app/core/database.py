@@ -99,7 +99,12 @@ def _migrate_evaluation_schema(connection: sqlite3.Connection) -> None:
                 case_snapshot_json = ?
             WHERE run_id = ? AND case_id = ?
             """,
-            (int(row[2] or 1), json.dumps(snapshot, ensure_ascii=False), row[0], row[1]),
+            (
+                int(row[2] or 1),
+                json.dumps(snapshot, ensure_ascii=False),
+                row[0],
+                row[1],
+            ),
         )
 
     connection.execute(

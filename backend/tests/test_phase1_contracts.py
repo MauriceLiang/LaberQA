@@ -4,12 +4,17 @@ import unittest
 from pathlib import Path
 
 import httpx
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
 from app.main import app
 from app.repositories.evaluation_repository import EvaluationRepository
-from app.repositories.retrieval_experiment_repository import RetrievalExperimentRepository
+from app.repositories.retrieval_experiment_repository import (
+    RetrievalExperimentRepository,
+)
 from app.repositories.retrieval_strategy_repository import RetrievalStrategyRepository
 from app.schemas.contracts import (
     EvaluationCase,
@@ -17,10 +22,8 @@ from app.schemas.contracts import (
     RetrievalStrategyCreate,
     RetrievalStrategyUpdate,
 )
-from app.services.retrieval_experiment_service import RetrievalExperimentService
 from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from app.services.retrieval_experiment_service import RetrievalExperimentService
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -406,7 +409,9 @@ class Phase1ContractTests(unittest.TestCase):
         self.assertEqual(created["version"], 1)
         updated = service.update_strategy(
             created["id"],
-            RetrievalStrategyUpdate(name="版本策略 v2", description="修改后", config=config),
+            RetrievalStrategyUpdate(
+                name="版本策略 v2", description="修改后", config=config
+            ),
         )
         self.assertEqual(updated["version"], 2)
         self.assertEqual(

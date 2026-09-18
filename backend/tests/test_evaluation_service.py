@@ -214,17 +214,24 @@ def test_delete_run_rejects_active_jobs_and_cascades_persisted_results() -> None
 
         assert service.repository.get_run(run["id"]) is None
         with sqlite3.connect(database_path) as connection:
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
-                (run["id"],),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
-                (run["id"],),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT COUNT(*) FROM evaluation_case"
-            ).fetchone()[0] == 60
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM evaluation_run_case WHERE run_id = ?",
+                    (run["id"],),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM evaluation_result WHERE run_id = ?",
+                    (run["id"],),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute("SELECT COUNT(*) FROM evaluation_case").fetchone()[0]
+                == 60
+            )
 
 
 def test_item_error_is_saved_and_remaining_cases_continue() -> None:
@@ -287,7 +294,9 @@ def test_startup_recovery_marks_interrupted_run_failed() -> None:
         assert detail["error_message"] == "服务重启导致任务中断"
 
 
-def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> None:
+def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot() -> (
+    None
+):
     with tempfile.TemporaryDirectory() as directory:
         database_path = Path(directory) / "eval.db"
         _create_database(database_path)
@@ -338,7 +347,10 @@ def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot()
         archived = service.archive_case(case["id"])
         assert archived["status"] == "ARCHIVED"
         assert service.repository.get_cases()[-1]["id"] == 60
-        assert service.repository.get_case(case["id"], include_archived=True)["status"] == "ARCHIVED"
+        assert (
+            service.repository.get_case(case["id"], include_archived=True)["status"]
+            == "ARCHIVED"
+        )
         assert snapshot["topic"] == "更新主题"
         assert snapshot["version"] == 2
 
@@ -377,7 +389,10 @@ def test_builtin_case_can_be_updated_and_run_scope_is_explicit() -> None:
             )
         )
         assert baseline["case_count"] == 60
-        assert service.repository.get_run(baseline["id"])["config"]["case_scope"] == "BUILTIN_BASELINE"
+        assert (
+            service.repository.get_run(baseline["id"])["config"]["case_scope"]
+            == "BUILTIN_BASELINE"
+        )
 
 
 def test_api_lists_seed_cases_and_returns_accepted_run() -> None:

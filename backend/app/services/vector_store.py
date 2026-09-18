@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -13,6 +14,10 @@ import faiss
 import numpy as np
 
 from app.core.config import Settings, settings
+from app.rag.constants import (
+    COMPATIBLE_SPLITTER_VERSIONS,
+    CURRENT_SPLITTER_VERSION,
+)
 from app.schemas.contracts import EmbeddingSignature, IndexMeta
 
 logger = logging.getLogger(__name__)
@@ -139,6 +144,7 @@ class VectorStoreService:
             return self._same_embedding_signature(self._meta, expected) and (
                 self._meta.chunk_size == self.config.chunk_size
                 and self._meta.chunk_overlap == self.config.chunk_overlap
+                and self._meta.splitter_version in COMPATIBLE_SPLITTER_VERSIONS
             )
 
     def add(self, chunks_with_vectors: Sequence[tuple[int, Sequence[float]]]) -> None:
@@ -229,7 +235,12 @@ class VectorStoreService:
             count = min(top_k, self._index.ntotal)
             if count == 0:
                 return []
-            similarities, indices = self._index.search(vector, count)
+            if sys.platform == "darwin":
+                similarities, indices = self._search_without_openmp(
+                    self._index, vector, count
+                )
+            else:
+                similarities, indices = self._index.search(vector, count)
             results: list[tuple[int, float]] = []
             for chunk_id, cosine in zip(indices[0], similarities[0], strict=True):
                 if chunk_id < 0:
@@ -237,6 +248,19 @@ class VectorStoreService:
                 retrieval_score = min(1.0, max(0.0, (float(cosine) + 1.0) / 2.0))
                 results.append((int(chunk_id), retrieval_score))
             return results
+
+    @staticmethod
+    def _search_without_openmp(
+        index: faiss.IndexIDMap2, query: np.ndarray, count: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Search small macOS indexes without crossing competing OpenMP runtimes."""
+        vectors = np.asarray(
+            index.index.reconstruct_n(0, index.ntotal), dtype=np.float32
+        )
+        ids = faiss.vector_to_array(index.id_map).astype(np.int64, copy=False)
+        scores = vectors @ query[0]
+        order = np.argsort(-scores, kind="stable")[:count]
+        return scores[order][None, :], ids[order][None, :]
 
     def save(self) -> None:
         with self._lock:
@@ -302,6 +326,7 @@ class VectorStoreService:
             **signature.model_dump(),
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
+            splitter_version=CURRENT_SPLITTER_VERSION,
             created_at=datetime.now(UTC),
         )
 

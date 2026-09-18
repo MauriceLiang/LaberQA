@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
+from app.rag.constants import CURRENT_SPLITTER_VERSION
 from app.schemas.contracts import EmbeddingSignature
 from app.services import vector_store as vector_store_module
 from app.services.vector_store import (
@@ -47,6 +48,7 @@ def test_add_search_remove_and_reload(tmp_path: Path) -> None:
     assert meta["normalize_embeddings"] is True
     assert meta["chunk_size"] == 600
     assert meta["chunk_overlap"] == 100
+    assert meta["splitter_version"] == CURRENT_SPLITTER_VERSION
     assert meta["created_at"]
 
     reloaded = VectorStoreService(make_config(), index_dir=tmp_path / "production")
@@ -54,6 +56,34 @@ def test_add_search_remove_and_reload(tmp_path: Path) -> None:
     assert reloaded.search([1.0, 0.0], 1) == [(101, 1.0)]
     reloaded.remove([101])
     assert reloaded.search([1.0, 0.0], 2) == [(102, 0.5)]
+
+
+def test_macos_search_uses_the_openmp_free_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = VectorStoreService(make_config(), index_dir=tmp_path / "production")
+    store.add([(101, [1.0, 0.0])])
+    fallback_calls = 0
+
+    def fake_search_without_openmp(
+        _index: object, _query: object, _count: int
+    ) -> tuple[object, object]:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return (
+            vector_store_module.np.asarray([[1.0]], dtype="float32"),
+            vector_store_module.np.asarray([[101]], dtype="int64"),
+        )
+
+    monkeypatch.setattr(vector_store_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        VectorStoreService,
+        "_search_without_openmp",
+        staticmethod(fake_search_without_openmp),
+    )
+
+    assert store.search([1.0, 0.0], 1) == [(101, 1.0)]
+    assert fallback_calls == 1
 
 
 def test_signature_mismatch_is_exposed_instead_of_loading_index(
@@ -73,6 +103,35 @@ def test_signature_mismatch_is_exposed_instead_of_loading_index(
     reloaded = VectorStoreService(make_config(), index_dir=index_dir)
     assert reloaded.load() is True
     assert reloaded.search([1.0, 0.0], 10) == [(1, 1.0)]
+
+
+def test_unknown_splitter_version_rejects_persisted_index(tmp_path: Path) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+    meta_path = index_dir / "index_meta.json"
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    metadata["splitter_version"] = "different-splitter-v2"
+    meta_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    incompatible = VectorStoreService(make_config(), index_dir=index_dir)
+    with pytest.raises(VectorStoreSignatureMismatch):
+        incompatible.load()
+    assert incompatible.status == "incompatible"
+
+
+def test_metadata_without_splitter_version_loads_as_compatible_legacy(
+    tmp_path: Path,
+) -> None:
+    index_dir = tmp_path / "production"
+    VectorStoreService(make_config(), index_dir=index_dir).add([(1, [1.0, 0.0])])
+    meta_path = index_dir / "index_meta.json"
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    metadata.pop("splitter_version")
+    meta_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    legacy = VectorStoreService(make_config(), index_dir=index_dir)
+    assert legacy.load() is True
+    assert legacy.search([1.0, 0.0], 1) == [(1, 1.0)]
 
 
 @pytest.mark.parametrize(

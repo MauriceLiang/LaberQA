@@ -86,7 +86,9 @@ class EvaluationService:
     def create_case(self, payload: EvaluationCaseCreate) -> dict[str, Any]:
         return self.repository.create_case(payload.model_dump(mode="json"))
 
-    def get_case(self, case_id: int, *, include_archived: bool = False) -> dict[str, Any]:
+    def get_case(
+        self, case_id: int, *, include_archived: bool = False
+    ) -> dict[str, Any]:
         case = self.repository.get_case(case_id, include_archived=include_archived)
         if case is None:
             raise AppError(
