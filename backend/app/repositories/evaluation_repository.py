@@ -343,7 +343,7 @@ class EvaluationRepository:
             connection.execute(
                 """
                 UPDATE evaluation_run SET status = 'COMPLETED', error_message = NULL,
-                    accuracy = ?, reject_rate = ?, citation_hit_rate = ?,
+                    accuracy = ?, reject_rate = ?, refusal_rate = ?, citation_hit_rate = ?,
                     multi_turn_pass_rate = ?, compliance_hit_rate = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -351,6 +351,7 @@ class EvaluationRepository:
                 (
                     metrics["accuracy"],
                     metrics["reject_rate"],
+                    metrics["refusal_rate"],
                     metrics["citation_hit_rate"],
                     metrics["multi_turn_pass_rate"],
                     metrics["compliance_hit_rate"],
@@ -425,6 +426,7 @@ class EvaluationRepository:
                     for key in (
                         "accuracy",
                         "reject_rate",
+                        "refusal_rate",
                         "citation_hit_rate",
                         "multi_turn_pass_rate",
                         "compliance_hit_rate",

@@ -667,6 +667,8 @@ export interface components {
             accuracy: number | null;
             /** Reject Rate */
             reject_rate: number | null;
+            /** Refusal Rate */
+            refusal_rate: number | null;
             /** Citation Hit Rate */
             citation_hit_rate: number | null;
             /** Multi Turn Pass Rate */

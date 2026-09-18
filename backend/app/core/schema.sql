@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS evaluation_run (
     config_json TEXT NOT NULL DEFAULT '{}',
     accuracy REAL CHECK (accuracy IS NULL OR (accuracy >= 0 AND accuracy <= 1)),
     reject_rate REAL CHECK (reject_rate IS NULL OR (reject_rate >= 0 AND reject_rate <= 1)),
+    refusal_rate REAL CHECK (refusal_rate IS NULL OR (refusal_rate >= 0 AND refusal_rate <= 1)),
     citation_hit_rate REAL CHECK (citation_hit_rate IS NULL OR (citation_hit_rate >= 0 AND citation_hit_rate <= 1)),
     multi_turn_pass_rate REAL CHECK (multi_turn_pass_rate IS NULL OR (multi_turn_pass_rate >= 0 AND multi_turn_pass_rate <= 1)),
     compliance_hit_rate REAL CHECK (compliance_hit_rate IS NULL OR (compliance_hit_rate >= 0 AND compliance_hit_rate <= 1)),

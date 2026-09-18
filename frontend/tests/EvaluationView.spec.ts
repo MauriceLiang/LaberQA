@@ -40,13 +40,15 @@ function casePage(items = [evaluationCase], page = 1, pages = 1) {
 
 function runSummary(
   status: evaluationsApi.EvaluationRunSummary['status'] = 'RUNNING',
+  current = 0,
+  total = 60,
 ): evaluationsApi.EvaluationRunSummary {
   return {
     id: 8,
     name: '回归评测',
     status,
-    progress_current: 1,
-    progress_total: 1,
+    progress_current: current,
+    progress_total: total,
     error_message: null,
     created_at: '2026-09-15T00:00:00Z',
     updated_at: '2026-09-15T00:00:01Z',
@@ -55,9 +57,11 @@ function runSummary(
 
 function runDetail(
   status: evaluationsApi.EvaluationRunDetail['status'] = 'RUNNING',
+  current = 8,
+  total = 60,
 ): evaluationsApi.EvaluationRunDetail {
   return {
-    ...runSummary(status),
+    ...runSummary(status, current, total),
     config: {
       langchain_version: '1.6.3',
       chat_provider: 'langchain_openai.ChatOpenAI',
@@ -84,6 +88,7 @@ function runDetail(
     metrics: status === 'COMPLETED' ? {
       accuracy: 0.9,
       reject_rate: 0.2,
+      refusal_rate: 0.1,
       citation_hit_rate: 0.8,
       multi_turn_pass_rate: 0.75,
       compliance_hit_rate: 1,
@@ -198,8 +203,8 @@ describe('EvaluationView', () => {
       items: [runSummary()], page: 1, size: 10, total: 1, pages: 1,
     })
     vi.mocked(evaluationsApi.getEvaluationRun)
-      .mockResolvedValueOnce(runDetail('RUNNING'))
-      .mockResolvedValueOnce(runDetail('COMPLETED'))
+      .mockResolvedValueOnce(runDetail('RUNNING', 8, 60))
+      .mockResolvedValueOnce(runDetail('COMPLETED', 60, 60))
 
     const wrapper = shallowMount(EvaluationView)
     await flushPromises()
@@ -212,6 +217,8 @@ describe('EvaluationView', () => {
     await flushPromises()
 
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.evaluation-run-table').text()).toContain('8 / 60')
+    expect(wrapper.get('.evaluation-progress').text()).toContain('8 / 60')
     expect(wrapper.find('.evaluation-detail-panel').exists()).toBe(true)
     expect(wrapper.get('.evaluation-link').attributes('aria-expanded')).toBe('true')
     expect(vi.getTimerCount()).toBe(1)
@@ -222,8 +229,16 @@ describe('EvaluationView', () => {
     await flushPromises()
 
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(2)
+    expect(evaluationsApi.getEvaluationRuns).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.evaluation-run-table').text()).toContain('60 / 60')
+    expect(wrapper.get('.evaluation-run-table').text()).toContain('已完成')
+    expect(wrapper.get('.evaluation-progress').text()).toContain('60 / 60')
+    expect(wrapper.get('.evaluation-run-delete').attributes('disabled')).not.toBe('true')
     expect(wrapper.text()).toContain('回答正确率')
     expect(wrapper.text()).toContain('90.0%')
+    expect(wrapper.text()).toContain('应拒答命中率')
+    expect(wrapper.text()).toContain('实际拒答率')
+    expect(wrapper.text()).toContain('10.0%')
     expect(wrapper.text()).toContain('多轮通过率')
     expect(wrapper.text()).not.toContain('此批次没有可计算的指标。')
     expect(wrapper.text()).toContain('用例 #3')
@@ -247,6 +262,7 @@ describe('EvaluationView', () => {
     detail.metrics = {
       accuracy: 0.85,
       reject_rate: null,
+      refusal_rate: null,
       citation_hit_rate: 0.65,
       multi_turn_pass_rate: null,
       compliance_hit_rate: null,

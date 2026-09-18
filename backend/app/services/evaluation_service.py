@@ -465,6 +465,10 @@ def _calculate_metrics(
             sum(completed[case["id"]]["correct"] is True for case in rejects),
             len(rejects),
         ),
+        "refusal_rate": rate(
+            sum(result["refused"] is True for result in completed.values()),
+            len(completed),
+        ),
         "citation_hit_rate": rate(
             sum(completed[case["id"]]["source_hit"] is True for case in citation_cases),
             len(citation_cases),

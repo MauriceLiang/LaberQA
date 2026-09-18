@@ -315,6 +315,7 @@ class EvaluationResultItem(ApiModel):
 class EvaluationMetrics(ApiModel):
     accuracy: Score | None
     reject_rate: Score | None
+    refusal_rate: Score | None
     citation_hit_rate: Score | None
     multi_turn_pass_rate: Score | None
     compliance_hit_rate: Score | None

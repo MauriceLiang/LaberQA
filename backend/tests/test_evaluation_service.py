@@ -172,6 +172,7 @@ def test_run_executes_subset_calculates_metrics_and_does_not_write_chat_tables()
         assert detail["metrics"] == {
             "accuracy": 1.0,
             "reject_rate": 1.0,
+            "refusal_rate": 0.5,
             "citation_hit_rate": 1.0,
             "multi_turn_pass_rate": None,
             "compliance_hit_rate": None,
@@ -353,6 +354,7 @@ def test_custom_case_can_be_updated_and_archived_without_changing_run_snapshot()
             {
                 "accuracy": None,
                 "reject_rate": None,
+                "refusal_rate": None,
                 "citation_hit_rate": None,
                 "multi_turn_pass_rate": None,
                 "compliance_hit_rate": None,
