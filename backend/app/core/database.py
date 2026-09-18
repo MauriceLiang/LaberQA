@@ -27,6 +27,29 @@ def initialize_database() -> None:
 def _migrate_evaluation_schema(connection: sqlite3.Connection) -> None:
     """Upgrade evaluation tables without requiring a separate migration runner."""
 
+    run_columns = _table_columns(connection, "evaluation_run")
+    refusal_rate_added = "refusal_rate" not in run_columns
+    if refusal_rate_added:
+        connection.execute(
+            "ALTER TABLE evaluation_run ADD COLUMN refusal_rate REAL"
+        )
+        connection.execute(
+            """
+            UPDATE evaluation_run
+            SET refusal_rate = (
+                SELECT CASE
+                    WHEN COUNT(*) = 0 THEN NULL
+                    ELSE CAST(SUM(CASE WHEN refused = 1 THEN 1 ELSE 0 END) AS REAL)
+                        / COUNT(*)
+                END
+                FROM evaluation_result
+                WHERE evaluation_result.run_id = evaluation_run.id
+                  AND evaluation_result.status = 'COMPLETED'
+            )
+            WHERE status = 'COMPLETED'
+            """
+        )
+
     case_columns = _table_columns(connection, "evaluation_case")
     case_additions = {
         "origin": "VARCHAR(20) NOT NULL DEFAULT 'BUILTIN'",

@@ -77,6 +77,7 @@ function runDetail(
     metrics: status === 'COMPLETED' ? {
       accuracy: 0.9,
       reject_rate: 0.2,
+      refusal_rate: 0.1,
       citation_hit_rate: 0.8,
       multi_turn_pass_rate: 0.75,
       compliance_hit_rate: 1,
@@ -217,6 +218,9 @@ describe('EvaluationView', () => {
     expect(evaluationsApi.getEvaluationRun).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('回答正确率')
     expect(wrapper.text()).toContain('90.0%')
+    expect(wrapper.text()).toContain('应拒答命中率')
+    expect(wrapper.text()).toContain('实际拒答率')
+    expect(wrapper.text()).toContain('10.0%')
     expect(wrapper.text()).toContain('多轮通过率')
     expect(wrapper.text()).not.toContain('此批次没有可计算的指标。')
     expect(wrapper.text()).toContain('用例 #3')
@@ -240,6 +244,7 @@ describe('EvaluationView', () => {
     detail.metrics = {
       accuracy: 0.85,
       reject_rate: null,
+      refusal_rate: null,
       citation_hit_rate: 0.65,
       multi_turn_pass_rate: null,
       compliance_hit_rate: null,
