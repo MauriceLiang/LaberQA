@@ -835,7 +835,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <form class="experiment-create-form" @submit.prevent="submitExperiment">
-          <label>
+          <label class="experiment-name-field">
             <span>实验名称</span>
             <ElInput
               v-model="experimentName"
@@ -859,6 +859,17 @@ onBeforeUnmount(() => {
               <ElOption label="自定义选择" value="SELECTED" />
             </ElSelect>
           </label>
+          <label>
+            <span>回答风格</span>
+            <ElSelect v-model="answerStyle" class="experiment-create-select" placeholder="使用默认值" aria-label="回答风格">
+              <ElOption label="使用默认值" value="" />
+              <ElOption label="通俗版" value="plain" />
+              <ElOption label="严谨版" value="legal" />
+            </ElSelect>
+          </label>
+          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
+            {{ creating ? '创建中…' : '创建实验' }}
+          </ElButton>
           <label v-if="caseScope === 'SELECTED'" class="experiment-case-select-label">
             <span>选择评测用例</span>
             <ElSelect
@@ -879,17 +890,6 @@ onBeforeUnmount(() => {
               />
             </ElSelect>
           </label>
-          <label>
-            <span>回答风格</span>
-            <ElSelect v-model="answerStyle" class="experiment-create-select" placeholder="使用默认值" aria-label="回答风格">
-              <ElOption label="使用默认值" value="" />
-              <ElOption label="通俗版" value="plain" />
-              <ElOption label="严谨版" value="legal" />
-            </ElSelect>
-          </label>
-          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
-            {{ creating ? '创建中…' : '创建实验' }}
-          </ElButton>
         </form>
       </div>
       <p v-if="caseError" class="experiment-error" role="alert">评测用例加载失败：{{ caseError }}</p>
@@ -1375,29 +1375,33 @@ onBeforeUnmount(() => {
 .experiment-create-layout {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
+  align-items: start;
+  gap: 26px;
 }
 
 .experiment-create-layout .experiment-heading {
-  margin: 0;
+  margin: 3px 0 0;
 }
 
 .experiment-create-form {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(150px, 180px) 126px;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(140px, 0.8fr) minmax(120px, 0.6fr) 108px;
+  align-items: end;
+  gap: 12px;
 }
 
 .experiment-create-form label {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
+  align-content: start;
+  gap: 6px;
   color: #758195;
   font-size: 12px;
-  white-space: nowrap;
+  line-height: 1.35;
+}
+
+.experiment-create-form label > span {
+  min-height: 16px;
 }
 
 .experiment-create-form input,
@@ -1414,14 +1418,35 @@ onBeforeUnmount(() => {
   font: inherit;
 }
 
-.experiment-create-input,
-.experiment-create-select {
-  flex: 1 1 auto;
+.experiment-create-input {
+  display: inline-flex;
+  width: 100%;
   min-width: 0;
 }
 
+.experiment-create-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.experiment-name-field {
+  grid-column: 1 / span 2;
+}
+
 .experiment-case-select-label {
-  grid-column: span 2;
+  grid-column: 1 / -1;
+}
+
+.experiment-create-form .experiment-primary {
+  width: 108px;
+  min-width: 108px;
+  min-height: 38px;
+  height: 38px;
+  align-self: end;
+  justify-self: end;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .experiment-create-input :deep(.el-input__wrapper),
@@ -2281,7 +2306,16 @@ onBeforeUnmount(() => {
   }
 
   .experiment-create-form {
-    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) 112px;
+    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr);
+  }
+
+  .experiment-name-field {
+    grid-column: auto;
+  }
+
+  .experiment-create-form .experiment-primary {
+    width: 108px;
+    grid-column: 2;
   }
 
   .experiment-summary-row {
@@ -2331,13 +2365,15 @@ onBeforeUnmount(() => {
   }
 
   .experiment-create-form label {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 5px;
     white-space: normal;
   }
 
+  .experiment-name-field {
+    grid-column: 1;
+  }
+
   .experiment-create-form .experiment-primary {
+    grid-column: 1;
     width: 100%;
   }
 
