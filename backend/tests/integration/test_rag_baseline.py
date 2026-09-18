@@ -7,11 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import Settings
+from app.rag.chains import REFUSAL_TEXT, RagChain
 from app.repositories.document_repository import DocumentRepository
 from app.schemas.contracts import AnswerStyle
-from app.services.rag_chain import REFUSAL_TEXT, RagChain
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import VectorStoreService
+from tests.support import AsyncClientChatModel
 
 from .conftest import (
     BASELINE_ANSWER,
@@ -42,7 +43,7 @@ def _chain(
         embedding_service=embedding,
         vector_store=vector_store,
     )
-    return RagChain(retrieval, llm, config)  # type: ignore[arg-type]
+    return RagChain(retrieval, AsyncClientChatModel(llm), config)
 
 
 def test_fixed_question_returns_expected_document_and_answer(

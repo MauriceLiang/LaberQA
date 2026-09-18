@@ -11,6 +11,8 @@ from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
 from app.main import app
+from app.rag.embeddings import LangChainEmbeddingService
+from app.rag.errors import EmbeddingUnavailableError
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.repositories.retrieval_experiment_repository import (
     RetrievalExperimentRepository,
@@ -22,7 +24,6 @@ from app.schemas.contracts import (
     RetrievalStrategyCreate,
     RetrievalStrategyUpdate,
 )
-from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 from app.services.retrieval_experiment_service import RetrievalExperimentService
 
 EXPECTED_OPERATIONS = {
@@ -221,7 +222,7 @@ class Phase1ContractTests(unittest.TestCase):
         with httpx.Client(
             transport=httpx.MockTransport(lambda request: httpx.Response(503))
         ) as client:
-            service = EmbeddingService(config, api_client=client)
+            service = LangChainEmbeddingService(config, api_client=client)
             with self.assertRaises(EmbeddingUnavailableError):
                 service.embed_documents(["测试文本"])
 

@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 import httpx
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import SecretStr
 
 from app.core.config import Settings, settings
@@ -73,6 +68,22 @@ def _resolve_local_model(model_name: str) -> str:
         return snapshot_download(model_name, local_files_only=True)
     except (LocalEntryNotFoundError, OSError):
         return model_name
+
+
+def local_embedding_is_cached(config: Settings = settings) -> bool:
+    """Return whether the configured local embedding model is on disk."""
+    try:
+        from huggingface_hub import snapshot_download
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        model_name = config.local_embedding_model
+        local_path = Path(model_name).expanduser()
+        if local_path.exists():
+            return True
+        snapshot_download(model_name, local_files_only=True)
+        return True
+    except (ImportError, LocalEntryNotFoundError, OSError):
+        return False
 
 
 def _resolve_local_device(device: str) -> str:
@@ -144,100 +155,6 @@ class CompatibleEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> list[float]:
         return self.embed_documents([text])[0]
-
-
-def ensure_chat_model(provider: BaseChatModel | Any) -> BaseChatModel:
-    """Return a ChatModel while keeping legacy async clients injectable.
-
-    The compatibility path is only for callers that still provide the old
-    ``complete``/``stream`` client. Production construction uses
-    :func:`build_chat_model` directly.
-    """
-
-    if isinstance(provider, BaseChatModel):
-        return provider
-    return _LegacyLlmClientChatModel(provider)
-
-
-class _LegacyLlmClientChatModel(BaseChatModel):
-    """Adapt the pre-Batch-2 async client to LangChain's ChatModel interface."""
-
-    client: Any
-
-    def __init__(self, client: Any, **kwargs: Any) -> None:
-        super().__init__(client=client, **kwargs)
-
-    @property
-    def _llm_type(self) -> str:
-        return "legacy-openai-compatible"
-
-    def _generate(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        del stop, run_manager
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(self._agenerate(messages, **kwargs))
-        raise RuntimeError("Legacy LLM clients require the asynchronous interface")
-
-    async def _agenerate(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        del stop, run_manager
-        request: dict[str, Any] = {
-            "messages": _message_dicts(messages),
-            "json_mode": bool(kwargs.get("response_format")),
-        }
-        if kwargs.get("temperature") is not None:
-            request["temperature"] = kwargs["temperature"]
-        content = await self.client.complete(**request)
-        return ChatResult(
-            generations=[ChatGeneration(message=AIMessage(content=content))]
-        )
-
-    async def _astream(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> AsyncIterator[ChatGenerationChunk]:
-        del stop, run_manager, kwargs
-        async for token in self.client.stream(_message_dicts(messages)):
-            yield ChatGenerationChunk(message=AIMessageChunk(content=token))
-
-
-def _message_dicts(messages: list[BaseMessage]) -> list[dict[str, str]]:
-    return [
-        {
-            "role": _message_role(message),
-            "content": _message_content(message),
-        }
-        for message in messages
-    ]
-
-
-def _message_role(message: BaseMessage) -> str:
-    return {
-        "human": "user",
-        "ai": "assistant",
-    }.get(message.type, message.type)
-
-
-def _message_content(message: BaseMessage) -> str:
-    content = message.content
-    return (
-        content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-    )
 
 
 def _without_endpoint_suffix(base_url: str, suffix: str) -> str:

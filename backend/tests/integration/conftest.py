@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
-from app.services.embedding import EmbeddingService
+from app.rag.embeddings import LangChainEmbeddingService
 
 BASELINE_FILE_NAME = "劳动合同法.txt"
 BASELINE_TEXT = "第十条 建立劳动关系，应当订立书面劳动合同。"
@@ -78,8 +78,8 @@ def baseline_config(tmp_path: Path, baseline_database: Path) -> Settings:
 
 
 @pytest.fixture
-def baseline_embedding(baseline_config: Settings) -> EmbeddingService:
-    return EmbeddingService(baseline_config, provider=FixedEmbeddingProvider())
+def baseline_embedding(baseline_config: Settings) -> LangChainEmbeddingService:
+    return LangChainEmbeddingService(baseline_config, provider=FixedEmbeddingProvider())
 
 
 def seed_success_document(database_path: Path) -> int:

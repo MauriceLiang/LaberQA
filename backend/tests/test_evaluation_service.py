@@ -13,6 +13,7 @@ from app.core.database import initialize_database
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.main import app
+from app.rag.errors import ModelUnavailableError
 from app.schemas.contracts import (
     EvaluationCaseCreate,
     EvaluationCaseUpdate,
@@ -20,7 +21,7 @@ from app.schemas.contracts import (
 )
 from app.services.evaluation_cases import fixed_evaluation_cases
 from app.services.evaluation_service import EvaluationService
-from app.services.llm import ModelUnavailableError
+from tests.support import AsyncClientChatModel
 
 
 class FakeJudge:
@@ -47,7 +48,8 @@ class FakeChat:
     def __init__(
         self, *, fail_question: str | None = None, model_failure: bool = False
     ) -> None:
-        self.llm_client = FakeJudge()
+        self.judge = FakeJudge()
+        self.chat_model = AsyncClientChatModel(self.judge)
         self.fail_question = fail_question
         self.model_failure = model_failure
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
@@ -174,7 +176,7 @@ def test_run_executes_subset_calculates_metrics_and_does_not_write_chat_tables()
             "multi_turn_pass_rate": None,
             "compliance_hit_rate": None,
         }
-        assert chat.llm_client.calls[0]["temperature"] == 0
+        assert chat.judge.calls[0]["temperature"] == 0
         with sqlite3.connect(database_path) as connection:
             assert connection.execute("SELECT COUNT(*) FROM session").fetchone()[0] == 0
             assert connection.execute("SELECT COUNT(*) FROM message").fetchone()[0] == 0

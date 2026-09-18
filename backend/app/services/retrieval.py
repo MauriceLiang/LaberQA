@@ -10,8 +10,8 @@ from langchain_core.documents import Document
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 
 from app.core.config import Settings, settings
+from app.rag.embeddings import LangChainEmbeddingService
 from app.repositories.document_repository import DocumentRepository
-from app.services.embedding import EmbeddingService
 from app.services.rerank import RerankService
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -35,13 +35,13 @@ class DomainRetrievalService:
         config: Settings = settings,
         *,
         repository: DocumentRepository | None = None,
-        embedding_service: EmbeddingService | None = None,
+        embedding_service: LangChainEmbeddingService | None = None,
         vector_store: VectorStoreService | None = None,
         rerank_service: RerankService | None = None,
     ) -> None:
         self.config = config
         self.repository = repository or DocumentRepository(config.database_path)
-        self.embedding_service = embedding_service or EmbeddingService(config)
+        self.embedding_service = embedding_service or LangChainEmbeddingService(config)
         self.vector_store = vector_store or VectorStoreService(
             config=config,
             embedding_service=self.embedding_service,

@@ -33,6 +33,7 @@ from app.services.retrieval_experiment_service import (
 )
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreService
+from tests.support import AsyncClientChatModel
 
 
 class FakeEmbeddingService:
@@ -54,7 +55,7 @@ class FakeEmbeddingService:
         return [1.0, 0.0]
 
 
-class FakeLlmClient:
+class FakeChatClient:
     async def complete(
         self,
         messages: list[dict[str, str]],
@@ -176,7 +177,7 @@ def _make_environment(
         SessionService(database_path=database_path),
         retrieval_service,
         config,
-        llm_client=FakeLlmClient(),
+        chat_model=AsyncClientChatModel(FakeChatClient()),
         missing_knowledge_service=MissingKnowledgeService(database_path=database_path),
     )
     evaluation_service = EvaluationService(

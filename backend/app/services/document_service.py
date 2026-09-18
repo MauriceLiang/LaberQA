@@ -11,11 +11,12 @@ from langchain_core.documents import Document
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.embeddings import LangChainEmbeddingService
+from app.rag.errors import EmbeddingUnavailableError
 from app.rag.loaders import LaborQADocumentLoader
 from app.rag.splitters import LegalTextSplitter
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_parser import ParserFactory, is_doc_parser_available
-from app.services.embedding import EmbeddingService, EmbeddingUnavailableError
 from app.services.file_storage import (
     DocumentConverterUnavailable,
     DocumentParseError,
@@ -37,7 +38,7 @@ class DocumentService:
         repository: DocumentRepository | None = None,
         file_storage: FileStorage | None = None,
         parser: type[ParserFactory] = ParserFactory,
-        embedding_service: EmbeddingService | None = None,
+        embedding_service: LangChainEmbeddingService | None = None,
         vector_store: VectorStoreService | None = None,
     ) -> None:
         self.config = config
@@ -46,7 +47,7 @@ class DocumentService:
             config.upload_path, max_size_bytes=config.max_upload_size_mb * 1024 * 1024
         )
         self.parser = parser
-        self.embedding_service = embedding_service or EmbeddingService(config)
+        self.embedding_service = embedding_service or LangChainEmbeddingService(config)
         self.vector_store = vector_store or VectorStoreService(
             config=config,
             embedding_service=self.embedding_service,

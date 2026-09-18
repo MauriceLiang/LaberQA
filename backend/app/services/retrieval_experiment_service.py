@@ -10,6 +10,12 @@ from langchain_core.documents import Document
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
+from app.rag.embeddings import LangChainEmbeddingService
+from app.rag.errors import (
+    EmbeddingDimensionUnknown,
+    EmbeddingUnavailableError,
+    ModelUnavailableError,
+)
 from app.rag.loaders import LaborQADocumentLoader
 from app.rag.runtime_config import runtime_config_snapshot
 from app.rag.splitters import LegalTextSplitter
@@ -35,14 +41,8 @@ from app.schemas.contracts import (
 )
 from app.services.chat_service import ChatService
 from app.services.document_parser import ParserFactory
-from app.services.embedding import (
-    EmbeddingDimensionUnknown,
-    EmbeddingService,
-    EmbeddingUnavailableError,
-)
 from app.services.evaluation_service import EvaluationService
 from app.services.file_storage import DocumentConverterUnavailable, DocumentParseError
-from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import ExecutionMode
 from app.services.rerank import RerankService
 from app.services.retrieval import RetrievalService
@@ -77,7 +77,7 @@ class RetrievalExperimentService:
         evaluation_repository: EvaluationRepository | None = None,
         repository: RetrievalExperimentRepository | None = None,
         strategy_repository: RetrievalStrategyRepository | None = None,
-        embedding_service: EmbeddingService | None = None,
+        embedding_service: LangChainEmbeddingService | None = None,
         parser: type[ParserFactory] = ParserFactory,
         evaluation_service: EvaluationService | None = None,
     ) -> None:

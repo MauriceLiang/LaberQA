@@ -14,7 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
-from app.rag.providers import ensure_chat_model
+from app.rag.errors import EmbeddingUnavailableError, ModelUnavailableError
 from app.rag.runtime_config import runtime_config_snapshot
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.schemas.contracts import (
@@ -27,9 +27,7 @@ from app.schemas.contracts import (
     EvaluationRunCreate,
 )
 from app.services.chat_service import ChatService
-from app.services.embedding import EmbeddingUnavailableError
 from app.services.evaluation_cases import fixed_evaluation_cases
-from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import ExecutionMode
 from app.services.vector_store import (
     VectorStoreNotInitialized,
@@ -363,10 +361,7 @@ class EvaluationService:
         }
         chat_model = getattr(self.chat_service, "chat_model", None)
         if chat_model is None:
-            legacy_client = getattr(self.chat_service, "llm_client", None)
-            if legacy_client is None:
-                raise ModelUnavailableError("评测模型尚未配置")
-            chat_model = ensure_chat_model(legacy_client)
+            raise ModelUnavailableError("评测模型尚未配置")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _escape_fstring_literals(self.evaluator_prompt)),

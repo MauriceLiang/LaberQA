@@ -17,10 +17,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableBranch, RunnableLambda
 
 from app.core.config import Settings, settings
-from app.rag.providers import ensure_chat_model
+from app.rag.errors import ModelUnavailableError
 from app.schemas.contracts import AnswerStyle, ToolExecutionItem
 from app.services.compliance import COMPLIANCE_NOTICE
-from app.services.llm import ModelUnavailableError
 from app.services.missing_knowledge import MissingKnowledgeReason
 from app.services.retrieval import RetrievalService
 
@@ -53,7 +52,7 @@ class RagChain:
     ) -> None:
         self.retrieval_service = retrieval_service
         self.retriever = getattr(retrieval_service, "retriever", None)
-        self.chat_model = ensure_chat_model(chat_model)
+        self.chat_model = chat_model
         self.config = config
         self.answer_prompt = _answer_prompt()
         self.rewrite_prompt = _rewrite_prompt()
@@ -76,7 +75,7 @@ class RagChain:
     def set_chat_model(self, model: BaseChatModel) -> None:
         """Keep all chains bound to the current ChatModel instance."""
 
-        self._set_chat_model(ensure_chat_model(model))
+        self._set_chat_model(model)
 
     async def rewrite_question(
         self, history: list[dict[str, Any]], question: str

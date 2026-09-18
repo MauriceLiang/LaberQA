@@ -14,7 +14,13 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from app.core.config import Settings, settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
-from app.rag.providers import build_chat_model, ensure_chat_model
+from app.rag.chains import (
+    ANSWER_STYLE_INSTRUCTIONS,
+    REFUSAL_TEXT,
+    RagChain,
+)
+from app.rag.errors import EmbeddingUnavailableError, ModelUnavailableError
+from app.rag.providers import build_chat_model
 from app.schemas.contracts import (
     AnswerStyle,
     ChatRequest,
@@ -24,18 +30,11 @@ from app.schemas.contracts import (
     ToolExecutionItem,
 )
 from app.services.compliance import COMPLIANCE_NOTICE, ComplianceRuleService
-from app.services.embedding import EmbeddingUnavailableError
-from app.services.llm import ModelUnavailableError
 from app.services.material_checklist import MaterialChecklistTool, ToolDecisionService
 from app.services.missing_knowledge import (
     ExecutionMode,
     MissingKnowledgeReason,
     MissingKnowledgeService,
-)
-from app.services.rag_chain import (
-    ANSWER_STYLE_INSTRUCTIONS,
-    REFUSAL_TEXT,
-    RagChain,
 )
 from app.services.retrieval import RetrievalService
 from app.services.vector_store import (
@@ -69,17 +68,13 @@ class ChatService:
         config: Settings = settings,
         *,
         chat_model: BaseChatModel | None = None,
-        llm_client: Any | None = None,
         missing_knowledge_service: MissingKnowledgeService | None = None,
     ) -> None:
         self.session_service = session_service
         self.retrieval_service = retrieval_service
         self.config = config
-        self._legacy_llm_client = llm_client
         if chat_model is not None:
-            self.chat_model = ensure_chat_model(chat_model)
-        elif llm_client is not None:
-            self.chat_model = ensure_chat_model(llm_client)
+            self.chat_model = chat_model
         elif all((config.llm_api_key, config.llm_base_url, config.llm_model)):
             self.chat_model = build_chat_model(config)
         else:
@@ -443,19 +438,6 @@ class ChatService:
 
     def _sync_rag_chain(self) -> None:
         self.rag_chain.set_chat_model(self.chat_model)
-
-    @property
-    def llm_client(self) -> Any | None:
-        """Expose the legacy client only for compatibility with old callers."""
-
-        return self._legacy_llm_client
-
-    @llm_client.setter
-    def llm_client(self, client: Any) -> None:
-        self._legacy_llm_client = client
-        self.chat_model = ensure_chat_model(client)
-        if hasattr(self, "rag_chain"):
-            self.rag_chain.set_chat_model(self.chat_model)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:

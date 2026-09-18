@@ -10,10 +10,10 @@ from app.api.dependencies import get_document_service
 from app.core.config import Settings, settings
 from app.core.database import initialize_database
 from app.main import app
+from app.rag.errors import EmbeddingUnavailableError
 from app.repositories.document_repository import DocumentRepository
 from app.schemas.contracts import EmbeddingSignature
 from app.services.document_service import DocumentService
-from app.services.embedding import EmbeddingUnavailableError
 from app.services.file_storage import DocumentParseError, FileStorage
 from app.services.vector_store import VectorStoreService
 

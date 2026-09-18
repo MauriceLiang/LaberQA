@@ -7,9 +7,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 from app.core.config import Settings
+from app.rag.chains import REFUSAL_TEXT, RagChain
+from app.rag.errors import ModelUnavailableError
 from app.schemas.contracts import AnswerStyle
-from app.services.llm import ModelUnavailableError
-from app.services.rag_chain import REFUSAL_TEXT, RagChain
+from tests.support import AsyncClientChatModel
 
 
 class FakeRetrieval:
@@ -72,9 +73,9 @@ def _config() -> Settings:
     )
 
 
-def test_rag_chain_uses_domain_retrieval_service_fallback_for_legacy_fakes() -> None:
+def test_rag_chain_uses_domain_retrieval_service_fallback() -> None:
     retrieval = FakeRetrieval()
-    chain = RagChain(retrieval, FakeLlm(), _config())  # type: ignore[arg-type]
+    chain = RagChain(retrieval, AsyncClientChatModel(FakeLlm()), _config())
 
     evidence = asyncio.run(chain.retrieve("劳动合同需要签订吗？"))
 
@@ -96,7 +97,7 @@ def test_rag_chain_uses_domain_retrieval_service_fallback_for_legacy_fakes() -> 
 
 def test_rag_chain_uses_prompt_runnable_and_preserves_evidence_text() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
     evidence = [
         {
             "chunk_id": 7,
@@ -142,7 +143,7 @@ def test_rag_chain_uses_prompt_runnable_and_preserves_evidence_text() -> None:
 
 def test_evidence_judge_is_a_langchain_prompt_chain() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
     evidence = [
         {
             "chunk_id": 7,
@@ -215,7 +216,7 @@ def test_rag_chain_converts_provider_failure_to_model_unavailable() -> None:
 
 def test_runnable_branch_returns_fixed_refusal_without_calling_answer_model() -> None:
     llm = FakeLlm()
-    chain = RagChain(FakeRetrieval(), llm, _config())  # type: ignore[arg-type]
+    chain = RagChain(FakeRetrieval(), AsyncClientChatModel(llm), _config())
 
     answer = asyncio.run(
         chain.complete_answer(
