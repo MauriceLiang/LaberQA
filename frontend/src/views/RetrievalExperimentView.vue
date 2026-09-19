@@ -843,11 +843,17 @@ onBeforeUnmount(() => {
         </label>
         <label class="preview-question-field">
           <span>测试问题</span>
-          <ElInput v-model="previewQuestion" type="textarea" :rows="2" maxlength="2000" placeholder="例如：公司拖欠工资，我应该准备什么材料？" />
+          <ElInput
+            v-model="previewQuestion"
+            class="preview-question-input"
+            type="text"
+            maxlength="2000"
+            placeholder="例如：公司拖欠工资，我应该准备什么材料？"
+          />
         </label>
         <ElButton class="experiment-primary preview-submit" type="primary" :loading="previewLoading" :disabled="!previewStrategy" @click="runPreview">开始试跑</ElButton>
       </div>
-      <p class="experiment-inline-hint">快速试跑复用当前生产索引。Top-k、Rerank、Rerank Top-N 和阈值会生效；Chunk Size / Overlap 不会重新切分。涉及切块粒度比较时，请创建正式实验。</p>
+      <p class="preview-limitations">快速试跑复用当前生产索引。Top-k、Rerank、Rerank Top-N 和阈值会生效；Chunk Size / Overlap 不会重新切分。涉及切块粒度比较时，请创建正式实验。</p>
       <p v-if="previewError" class="experiment-error" role="alert">{{ previewError }}</p>
       <div v-if="previewLoading" class="preview-loading">正在执行检索链路…</div>
       <template v-if="previewResult">
@@ -1275,7 +1281,7 @@ onBeforeUnmount(() => {
 .preview-form {
   display: grid;
   grid-template-columns: minmax(220px, 0.75fr) minmax(0, 2fr) 132px;
-  align-items: start;
+  align-items: end;
   gap: 12px;
 }
 
@@ -1293,22 +1299,35 @@ onBeforeUnmount(() => {
   min-height: 16px;
 }
 
-.preview-question-field :deep(.el-textarea),
-.preview-question-field :deep(.el-textarea__inner) {
+.preview-question-field {
   width: 100%;
 }
 
-.preview-question-field :deep(.el-textarea__inner) {
-  min-height: 76px;
-  padding: 9px 10px;
+.preview-question-field :deep(.el-input.preview-question-input) {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.preview-question-field :deep(.preview-question-input .el-input__wrapper) {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
   color: #354257;
   background: #fff;
   border: 1px solid #d8e0da;
   border-radius: 7px;
   box-shadow: none;
   font: inherit;
-  line-height: 1.5;
-  resize: vertical;
+}
+
+.preview-question-field :deep(.preview-question-input .el-input__inner) {
+  color: #354257;
+  font: inherit;
+}
+
+.preview-question-field :deep(.preview-question-input .el-input__inner::placeholder) {
+  color: #a0a9b5;
 }
 
 .preview-submit {
@@ -1316,6 +1335,18 @@ onBeforeUnmount(() => {
   width: 132px;
   min-height: 38px;
   height: 38px;
+  margin-bottom: 0;
+}
+
+.preview-limitations {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  color: #8793a4;
+  background: #f3f8f5;
+  border: 1px solid #e3eee8;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .preview-result-toolbar {

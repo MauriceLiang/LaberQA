@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { ElButton } from 'element-plus'
+import { ElButton, ElInput } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as experimentsApi from '@/api/experiments'
@@ -244,6 +244,10 @@ describe('RetrievalExperimentView', () => {
     expect(wrapper.findAll('.strategy-card').at(5)!.classes()).toContain('strategy-card-preview-selected')
     const startButton = wrapper.find('.preview-submit')
     expect(startButton.exists()).toBe(true)
+    const questionInput = wrapper.find('.preview-question-field').findComponent(ElInput)
+    expect(questionInput.exists()).toBe(true)
+    expect(questionInput.props('type')).toBe('text')
+    expect(wrapper.find('.preview-limitations').exists()).toBe(true)
     await startButton.trigger('click')
     await flushPromises()
 
