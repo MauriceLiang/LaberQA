@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { ElButton, ElInput } from 'element-plus'
+import { ElInput, ElSelect } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as experimentsApi from '@/api/experiments'
@@ -238,14 +238,21 @@ describe('RetrievalExperimentView', () => {
     wrapper.unmount()
   })
 
-  it('sends the clicked strategy id for single-question preview and renders backend identity', async () => {
+  it('selects a strategy by clicking its card or the quick-validation selector', async () => {
     const wrapper = await mountView()
-    const previewButton = wrapper.findAll('.strategy-card-actions').at(5)!.findComponent(ElButton)
-    expect(previewButton.exists()).toBe(true)
-    await previewButton.trigger('click')
+    const strategyCard = wrapper.findAll('.strategy-card').at(5)!
+    expect(wrapper.text()).not.toContain('单题试跑')
+    expect(strategyCard.attributes('role')).toBe('button')
+    await strategyCard.trigger('click')
     await wrapper.vm.$nextTick()
     expect(experimentsApi.previewRetrieval).not.toHaveBeenCalled()
     expect(wrapper.findAll('.strategy-card').at(5)!.classes()).toContain('strategy-card-preview-selected')
+
+    const previewSelect = wrapper.findAllComponents(ElSelect).at(0)!
+    await previewSelect.vm.$emit('update:modelValue', 6)
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as unknown as { previewStrategyId: number }).previewStrategyId).toBe(6)
+
     const startButton = wrapper.find('.preview-submit')
     expect(startButton.exists()).toBe(true)
     const questionInput = wrapper.find('.preview-question-field').findComponent(ElInput)

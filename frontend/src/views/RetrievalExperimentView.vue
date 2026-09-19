@@ -488,7 +488,8 @@ async function removeStrategy(strategy: RetrievalStrategy) {
   }
 }
 
-function openPreview(strategy: RetrievalStrategy) {
+function selectPreviewStrategy(strategy: RetrievalStrategy) {
+  if (!strategy.is_active || strategy.archived_at) return
   previewStrategyId.value = strategy.id
   clearPreviewResult()
   void nextTick(() => {
@@ -497,6 +498,13 @@ function openPreview(strategy: RetrievalStrategy) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   })
+}
+
+function updatePreviewStrategy(strategyId: number | undefined) {
+  const strategy = availableStrategies.value.find((item) => item.id === strategyId)
+  if (!strategy) return
+  previewStrategyId.value = strategy.id
+  clearPreviewResult()
 }
 
 function clearPreviewResult() {
@@ -780,10 +788,18 @@ onBeforeUnmount(() => {
           v-for="strategy in strategies"
           :key="strategy.id"
           class="strategy-card"
+          role="button"
+          tabindex="0"
+          :aria-label="'选择策略 ' + strategy.name"
+          :aria-pressed="previewStrategyId === strategy.id"
+          :aria-disabled="!strategy.is_active || !!strategy.archived_at"
           :class="{
             'strategy-card-disabled': !strategy.is_active || strategy.archived_at,
             'strategy-card-preview-selected': previewStrategyId === strategy.id,
           }"
+          @click="selectPreviewStrategy(strategy)"
+          @keydown.enter.prevent="selectPreviewStrategy(strategy)"
+          @keydown.space.prevent="selectPreviewStrategy(strategy)"
         >
           <div class="strategy-card-select">
             <span>{{ strategy.name }} <em>v{{ strategy.version }}</em><em v-if="strategy.archived_at"> · 已归档</em><em v-else-if="!strategy.is_active"> · 已停用</em></span>
@@ -795,13 +811,7 @@ onBeforeUnmount(() => {
             <div><dt>重排</dt><dd>{{ strategy.config.rerank_enabled ? '开' : '关' }}</dd></div>
             <div><dt>阈值</dt><dd>{{ strategy.config.score_threshold.toFixed(2) }}</dd></div>
           </dl>
-          <div class="strategy-card-actions">
-            <ElButton
-              text
-              :disabled="!strategy.is_active || !!strategy.archived_at"
-              :aria-pressed="previewStrategyId === strategy.id"
-              @click="openPreview(strategy)"
-            >单题试跑</ElButton>
+          <div class="strategy-card-actions" @click.stop @keydown.stop>
             <ElButton text @click="editStrategy(strategy)">编辑</ElButton>
             <ElButton text @click="openStrategyVersions(strategy)">版本</ElButton>
             <ElButton
@@ -833,7 +843,13 @@ onBeforeUnmount(() => {
       <div class="preview-form">
         <label>
           <span>策略</span>
-          <ElSelect v-model="previewStrategyId" class="experiment-create-select" aria-label="单题试跑策略" placeholder="选择一条策略">
+          <ElSelect
+            :model-value="previewStrategyId"
+            class="experiment-create-select"
+            aria-label="单题试跑策略"
+            placeholder="选择一条策略"
+            @update:model-value="updatePreviewStrategy"
+          >
             <ElOption
               v-for="strategy in availableStrategies"
               :key="strategy.id"
@@ -2113,10 +2129,17 @@ onBeforeUnmount(() => {
   background: #fbfdfc;
   border: 1px solid #e2ebe6;
   border-radius: 8px;
+  cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.strategy-card:focus-visible {
+  outline: 2px solid #76ad92;
+  outline-offset: 2px;
+}
+
 .strategy-card-disabled {
+  cursor: not-allowed;
   opacity: 0.68;
   background: #f5f7f6;
 }
@@ -2228,6 +2251,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 2px;
   margin-top: 8px;
+  cursor: default;
 }
 
 .strategy-card-actions :deep(.el-button) {
