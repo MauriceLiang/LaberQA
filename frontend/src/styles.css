@@ -1223,6 +1223,7 @@ input {
 }
 
 .upload-file-name,
+.upload-progress,
 .document-upload .inline-error {
   grid-column: 1 / -1;
   margin: 0;
@@ -1233,6 +1234,10 @@ input {
 .upload-file-name {
   color: #6f7d76 !important;
   overflow-wrap: anywhere;
+}
+
+.upload-progress {
+  color: #176148;
 }
 
 .inline-error,

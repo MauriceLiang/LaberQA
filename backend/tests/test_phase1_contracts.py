@@ -306,6 +306,59 @@ class Phase1ContractTests(unittest.TestCase):
                     }.issubset(columns)
                 )
 
+    def test_database_migrates_old_document_file_type_constraint(self) -> None:
+        database_path = settings.database_path
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE document (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_name VARCHAR(255) NOT NULL,
+                    file_type VARCHAR(20) NOT NULL
+                        CHECK (file_type IN ('pdf', 'doc', 'docx', 'txt')),
+                    file_path VARCHAR(500) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'PROCESSING'
+                        CHECK (status IN ('PROCESSING', 'SUCCESS', 'FAILED')),
+                    chunk_count INTEGER NOT NULL DEFAULT 0 CHECK (chunk_count >= 0),
+                    error_message VARCHAR(500),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO document (
+                    file_name, file_type, file_path, status, chunk_count
+                )
+                VALUES ('旧资料.txt', 'txt', '/tmp/old.txt', 'SUCCESS', 1)
+                """
+            )
+
+        initialize_database()
+
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO document (
+                    file_name, file_type, file_path, status
+                )
+                VALUES ('新资料.md', 'md', '/tmp/new.md', 'PROCESSING')
+                """
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM document WHERE file_type = 'md'"
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM document WHERE file_name = '旧资料.txt'"
+                ).fetchone()[0],
+                1,
+            )
+
     def test_retrieval_experiment_archive_and_export_lifecycle(self) -> None:
         initialize_database()
         EvaluationRepository(settings.database_path).create_case(

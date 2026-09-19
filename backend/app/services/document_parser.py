@@ -47,7 +47,7 @@ def is_doc_parser_available(config: Settings | None = None) -> bool:
 
 
 class ParserFactory:
-    """Parse PDF, DOCX, TXT, and legacy DOC documents into plain text."""
+    """Parse PDF, DOCX, Markdown, and legacy DOC documents into plain text."""
 
     @classmethod
     def parse(
@@ -60,7 +60,7 @@ class ParserFactory:
         source_path = Path(path)
         normalized_type = str(getattr(file_type, "value", file_type))
         normalized_type = normalized_type.lower().lstrip(".")
-        if normalized_type not in {"pdf", "doc", "docx", "txt"}:
+        if normalized_type not in {"pdf", "doc", "docx", "md", "txt"}:
             raise UnsupportedFileTypeError()
 
         suffix = source_path.suffix.lower().lstrip(".")
@@ -79,16 +79,26 @@ class ParserFactory:
             return cls._parse_docx(source_path)
         if normalized_type == "txt":
             return cls._parse_txt(source_path)
+        if normalized_type == "md":
+            return cls._parse_markdown(source_path)
         return cls._parse_doc(source_path, config=config)
 
     @staticmethod
     def _parse_txt(path: Path) -> str:
+        return ParserFactory._parse_text(path, "TXT")
+
+    @staticmethod
+    def _parse_markdown(path: Path) -> str:
+        return ParserFactory._parse_text(path, "MD")
+
+    @staticmethod
+    def _parse_text(path: Path, file_label: str) -> str:
         try:
             text = path.read_text(encoding="utf-8-sig")
         except UnicodeDecodeError as exc:
-            raise DocumentParseError("TXT 文件不是有效的 UTF-8 文本") from exc
+            raise DocumentParseError(f"{file_label} 文件不是有效的 UTF-8 文本") from exc
         except OSError as exc:
-            raise DocumentParseError("无法读取 TXT 文件") from exc
+            raise DocumentParseError(f"无法读取 {file_label} 文件") from exc
         if not text.strip():
             raise EmptyFileError()
         return text

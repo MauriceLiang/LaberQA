@@ -9,7 +9,7 @@
 ## 功能
 
 - **有据可查的问答**：支持多轮会话和流式回答，展示引用文件与原文片段，并可切换通俗解读或严谨条款风格。
-- **劳动法规知识库**：导入 PDF、DOC、DOCX、TXT 文件，查看导入状态和文本片段；失败的资料可以重新导入。
+- **劳动法规知识库**：导入 PDF、DOC、DOCX、MD、TXT 文件，查看导入状态和文本片段；失败的资料可以重新导入。
 - **咨询辅助**：提供材料清单工具、合规提示，并汇总知识库暂未覆盖的问题，便于补充资料。
 - **回答质量评测**：通过预置用例查看回答正确率、拒答率和引用命中情况。
 - **检索策略实验**：比较不同分块、召回数量和重排设置对检索与回答效果的影响。
@@ -121,7 +121,7 @@ docker compose up -d --build
 
 ## 首次使用
 
-项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
+项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX、MD 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
 
 后端启动时会自动初始化 SQLite 数据库，无需手动执行 SQL。默认数据位置如下：
 

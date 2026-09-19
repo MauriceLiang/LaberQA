@@ -760,7 +760,7 @@ export interface components {
         Body_upload_document_api_documents_upload_post: {
             /**
              * File
-             * @description PDF, DOC, DOCX or TXT document
+             * @description PDF, DOC, DOCX, MD or TXT document
              */
             file: string;
         };
@@ -1236,7 +1236,7 @@ export interface components {
          * FileType
          * @enum {string}
          */
-        FileType: "pdf" | "doc" | "docx" | "txt";
+        FileType: "pdf" | "doc" | "docx" | "md" | "txt";
         /** HealthData */
         HealthData: {
             /** Service */

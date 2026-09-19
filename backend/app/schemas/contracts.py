@@ -15,6 +15,7 @@ class FileType(StrEnum):
     PDF = "pdf"
     DOC = "doc"
     DOCX = "docx"
+    MD = "md"
     TXT = "txt"
 
 

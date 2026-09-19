@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS document (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_name VARCHAR(255) NOT NULL,
-    file_type VARCHAR(20) NOT NULL CHECK (file_type IN ('pdf', 'doc', 'docx', 'txt')),
+    file_type VARCHAR(20) NOT NULL CHECK (file_type IN ('pdf', 'doc', 'docx', 'md', 'txt')),
     file_path VARCHAR(500) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PROCESSING'
         CHECK (status IN ('PROCESSING', 'SUCCESS', 'FAILED')),

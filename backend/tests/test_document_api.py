@@ -100,7 +100,7 @@ class DocumentApiTests(unittest.TestCase):
             app.state.document_service = self._service()
             response = client.post(
                 "/api/documents/upload",
-                files={"file": ("../劳动法.txt", "上传内容".encode(), "text/plain")},
+                files={"file": ("../劳动法.md", "# 上传内容".encode(), "application/octet-stream")},
             )
             self.assertEqual(response.status_code, 202)
             accepted = response.json()["data"]
