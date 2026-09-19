@@ -1,0 +1,3 @@
+mauriceliang.xyz {
+    reverse_proxy frontend:80
+}
