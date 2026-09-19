@@ -9,7 +9,7 @@
 | 目录 | 内容 |
 | --- | --- |
 | `data/` | SQLite 数据库、生产 FAISS 索引和检索实验索引 |
-| `uploads/` | 用户上传的 PDF、DOC、DOCX、TXT 原文件 |
+| `uploads/` | 用户上传的 PDF、DOC、DOCX、MD、TXT 原文件 |
 | `model-cache/` | HuggingFace / Sentence Transformers 模型缓存 |
 | `backups/` | 备份包和恢复前快照 |
 

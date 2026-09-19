@@ -19,9 +19,74 @@ def initialize_database() -> None:
     ):
         connection.execute("PRAGMA foreign_keys = ON")
         connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        _migrate_document_schema(connection)
         _migrate_evaluation_schema(connection)
         _migrate_retrieval_experiment_schema(connection)
         _migrate_retrieval_strategy_schema(connection)
+
+
+def _migrate_document_schema(connection: sqlite3.Connection) -> None:
+    """Allow Markdown uploads in databases created before Markdown support."""
+
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'document'"
+    ).fetchone()
+    table_sql = str(row[0] or "").lower() if row else ""
+    if not table_sql or "'md'" in table_sql:
+        return
+
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        connection.executescript(
+            """
+            BEGIN;
+            CREATE TABLE document_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name VARCHAR(255) NOT NULL,
+                file_type VARCHAR(20) NOT NULL
+                    CHECK (file_type IN ('pdf', 'doc', 'docx', 'md', 'txt')),
+                file_path VARCHAR(500) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'PROCESSING'
+                    CHECK (status IN ('PROCESSING', 'SUCCESS', 'FAILED')),
+                chunk_count INTEGER NOT NULL DEFAULT 0 CHECK (chunk_count >= 0),
+                error_message VARCHAR(500),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO document_new (
+                id,
+                file_name,
+                file_type,
+                file_path,
+                status,
+                chunk_count,
+                error_message,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                file_name,
+                file_type,
+                file_path,
+                status,
+                chunk_count,
+                error_message,
+                created_at,
+                updated_at
+            FROM document;
+            DROP TABLE document;
+            ALTER TABLE document_new RENAME TO document;
+            COMMIT;
+            """
+        )
+    except sqlite3.Error:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
 
 
 def _migrate_evaluation_schema(connection: sqlite3.Connection) -> None:

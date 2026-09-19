@@ -19,6 +19,7 @@ _MIME_TYPES_BY_SUFFIX = {
         {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
     ),
     ".txt": frozenset({"text/plain"}),
+    ".md": frozenset({"text/markdown", "text/x-markdown", "text/plain", "application/octet-stream"}),
 }
 _READ_CHUNK_SIZE = 64 * 1024
 
@@ -41,7 +42,7 @@ class UnsupportedFileTypeError(UploadValidationError):
 
     def __init__(self) -> None:
         super().__init__(
-            "仅支持 PDF、DOC、DOCX 和 TXT 文件",
+            "仅支持 PDF、DOC、DOCX、MD 和 TXT 文件",
             ErrorCode.UNSUPPORTED_FILE_TYPE,
             400,
         )

@@ -23,7 +23,17 @@ export class ApiError extends Error {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
-  if (axios.isAxiosError(error) && !error.response) return '无法连接后端，请检查服务是否已启动'
+
+  if (axios.isAxiosError(error)) {
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return '请求处理超时，请稍后重试'
+    }
+
+    if (!error.response) {
+      return '无法连接服务器，请检查网络或服务状态'
+    }
+  }
+
   if (error instanceof Error) return error.message
   return '请求失败，请稍后重试'
 }

@@ -22,7 +22,7 @@ class RetrievalExperimentRepository:
         case_count: int,
         snapshot: dict[str, Any],
     ) -> dict[str, Any]:
-        configs = snapshot["configs"]
+        configs = snapshot.get("strategy_snapshots") or snapshot.get("configs", [])
         with self._connection() as connection:
             cursor = connection.execute(
                 """

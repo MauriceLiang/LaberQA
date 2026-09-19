@@ -46,6 +46,27 @@ class FileStorageTests(unittest.TestCase):
         self.assertEqual(stored.size_bytes, 8)
         self.assertEqual(list(self.root.glob(".upload-*.tmp")), [])
 
+    def test_accepts_markdown_with_markdown_mime_type(self) -> None:
+        stored = self.storage.save(
+            io.BytesIO(b"# md"),
+            "law.md",
+            "text/markdown",
+        )
+
+        self.assertEqual(stored.file_name, "law.md")
+        self.assertEqual(stored.file_type, "md")
+        self.assertTrue(stored.path.name.endswith(".md"))
+
+    def test_accepts_markdown_with_generic_browser_mime_type(self) -> None:
+        stored = self.storage.save(
+            io.BytesIO(b"# md"),
+            "law-browser.md",
+            "application/octet-stream",
+        )
+
+        self.assertEqual(stored.file_type, "md")
+        self.assertEqual(stored.mime_type, "application/octet-stream")
+
     def test_rejects_unsupported_extension_and_mime_mismatch(self) -> None:
         with self.assertRaises(UnsupportedFileTypeError) as unsupported:
             self.storage.save(io.BytesIO(b"data"), "law.rtf", "application/rtf")
@@ -110,6 +131,15 @@ class ParserFactoryTests(unittest.TestCase):
         source.write_text("  \n", encoding="utf-8")
         with self.assertRaises(EmptyFileError):
             ParserFactory.parse(source, "txt")
+
+    def test_markdown_is_decoded_as_utf8(self) -> None:
+        source = self.root / "law.md"
+        source.write_text("# 标题\n\n正文", encoding="utf-8")
+
+        self.assertEqual(
+            ParserFactory.parse(source, "md"),
+            "# 标题\n\n正文",
+        )
 
     def test_txt_invalid_utf8_is_a_parse_error(self) -> None:
         source = self.root / "law.txt"

@@ -103,7 +103,7 @@ def _contract_only() -> NoReturn:
     summary="Upload a document and start its import job",
 )
 async def upload_document(
-    file: Annotated[UploadFile, File(description="PDF, DOC, DOCX or TXT document")],
+    file: Annotated[UploadFile, File(description="PDF, DOC, DOCX, MD or TXT document")],
     background_tasks: BackgroundTasks,
     service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> ApiResponse[DocumentUploadAccepted]:

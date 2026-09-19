@@ -2,13 +2,29 @@ import type { components, paths } from '@/types/api.generated'
 import { http } from '@/api/http'
 
 export type ExperimentConfig = components['schemas']['ExperimentConfig']
-export type ExperimentCreate = components['schemas']['ExperimentCreate']
 export type ExperimentCaseScope = 'BUILTIN_BASELINE' | 'ALL_ACTIVE' | 'SELECTED'
+
+export interface ExperimentCreate {
+  name: string
+  strategy_ids: number[]
+  case_scope: ExperimentCaseScope
+  case_ids: number[] | null
+  answer_style: 'plain' | 'legal'
+}
+
+export interface RetrievalStrategySnapshot {
+  strategy_id: number
+  name: string
+  version: number
+  config: ExperimentConfig
+}
+
 export type ExperimentSummary = components['schemas']['ExperimentSummary'] & {
   archived_at?: string | null
 }
-export type ExperimentDetail = components['schemas']['ExperimentDetail'] & {
-  config_names?: string[]
+export type ExperimentDetail = Omit<components['schemas']['ExperimentDetail'], 'case_count' | 'strategy_snapshots'> & {
+  case_count: number
+  strategy_snapshots: RetrievalStrategySnapshot[]
   archived_at?: string | null
 }
 export type ExperimentJob = components['schemas']['ExperimentJob']
@@ -67,6 +83,11 @@ export interface RetrievalTraceStage {
 }
 
 export interface RetrievalPreview {
+  strategy_id: number
+  strategy_name: string
+  strategy_version: number
+  index_mode: string
+  limitations: string[]
   question: string
   rewritten_question: string
   answer: string
@@ -83,7 +104,7 @@ export async function getExperiments(query: ExperimentQuery): Promise<Experiment
   return response.data
 }
 
-export async function createExperiment(payload: ExperimentCreate & { config_names?: string[]; case_scope?: ExperimentCaseScope }): Promise<ExperimentJob> {
+export async function createExperiment(payload: ExperimentCreate): Promise<ExperimentJob> {
   const response = await http.post<ExperimentJob>('/retrieval-experiments', payload)
   return response.data
 }
@@ -140,9 +161,13 @@ export async function deleteRetrievalStrategy(id: number): Promise<void> {
 export async function previewRetrieval(payload: {
   question: string
   answer_style: 'plain' | 'legal'
-  config: ExperimentConfig
+  strategy_id: number
 }): Promise<RetrievalPreview> {
-  const response = await http.post<RetrievalPreview>('/retrieval-experiments/preview', payload)
+  const response = await http.post<RetrievalPreview>(
+    '/retrieval-experiments/preview',
+    payload,
+    { timeout: 120_000 },
+  )
   return response.data
 }
 

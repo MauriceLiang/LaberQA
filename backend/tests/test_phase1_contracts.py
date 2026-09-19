@@ -4,9 +4,6 @@ import unittest
 from pathlib import Path
 
 import httpx
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
@@ -21,10 +18,13 @@ from app.repositories.retrieval_strategy_repository import RetrievalStrategyRepo
 from app.schemas.contracts import (
     EvaluationCase,
     ExperimentConfig,
+    ExperimentCreate,
     RetrievalStrategyCreate,
     RetrievalStrategyUpdate,
 )
 from app.services.retrieval_experiment_service import RetrievalExperimentService
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -147,23 +147,24 @@ class Phase1ContractTests(unittest.TestCase):
                 "/api/retrieval-experiments",
                 json={
                     "name": "invalid",
+                    "strategy_ids": [1, 1],
+                    "case_scope": "BUILTIN_BASELINE",
                     "case_ids": None,
                     "answer_style": "plain",
-                    "configs": [
-                        {
-                            "chunk_size": 400,
-                            "chunk_overlap": 400,
-                            "top_k": 5,
-                            "rerank_enabled": False,
-                            "rerank_top_n": 5,
-                            "score_threshold": 0.35,
-                        }
-                    ],
                 },
             )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], ErrorCode.INVALID_EXPERIMENT_CONFIG)
+
+    def test_experiment_requires_two_distinct_strategies(self) -> None:
+        for strategy_ids in ([1], [1, 1]):
+            with self.assertRaises(ValidationError):
+                ExperimentCreate(
+                    name="invalid",
+                    strategy_ids=strategy_ids,
+                    case_scope="BUILTIN_BASELINE",
+                )
 
     def test_session_route_creates_a_session(self) -> None:
         with TestClient(app) as client:
@@ -304,6 +305,59 @@ class Phase1ContractTests(unittest.TestCase):
                         "expected_sources_json",
                     }.issubset(columns)
                 )
+
+    def test_database_migrates_old_document_file_type_constraint(self) -> None:
+        database_path = settings.database_path
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE document (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_name VARCHAR(255) NOT NULL,
+                    file_type VARCHAR(20) NOT NULL
+                        CHECK (file_type IN ('pdf', 'doc', 'docx', 'txt')),
+                    file_path VARCHAR(500) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'PROCESSING'
+                        CHECK (status IN ('PROCESSING', 'SUCCESS', 'FAILED')),
+                    chunk_count INTEGER NOT NULL DEFAULT 0 CHECK (chunk_count >= 0),
+                    error_message VARCHAR(500),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO document (
+                    file_name, file_type, file_path, status, chunk_count
+                )
+                VALUES ('旧资料.txt', 'txt', '/tmp/old.txt', 'SUCCESS', 1)
+                """
+            )
+
+        initialize_database()
+
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO document (
+                    file_name, file_type, file_path, status
+                )
+                VALUES ('新资料.md', 'md', '/tmp/new.md', 'PROCESSING')
+                """
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM document WHERE file_type = 'md'"
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM document WHERE file_name = '旧资料.txt'"
+                ).fetchone()[0],
+                1,
+            )
 
     def test_retrieval_experiment_archive_and_export_lifecycle(self) -> None:
         initialize_database()

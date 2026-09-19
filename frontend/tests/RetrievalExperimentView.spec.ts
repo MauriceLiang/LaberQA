@@ -1,20 +1,63 @@
+import axios from 'axios'
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { ElInput } from 'element-plus'
+import { ElInput, ElSelect } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as experimentsApi from '@/api/experiments'
 import * as evaluationsApi from '@/api/evaluations'
+import { getErrorMessage } from '@/api/http'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 import RetrievalExperimentView from '@/views/RetrievalExperimentView.vue'
 
 vi.mock('@/api/experiments', () => ({
+  archiveRetrievalExperiment: vi.fn(),
+  archiveRetrievalStrategy: vi.fn(),
+  copyExperiment: vi.fn(),
   createExperiment: vi.fn(),
+  createRetrievalStrategy: vi.fn(),
+  deleteExperiment: vi.fn(),
+  deleteRetrievalStrategy: vi.fn(),
+  exportRetrievalExperiment: vi.fn(),
   getExperiment: vi.fn(),
   getExperiments: vi.fn(),
+  listRetrievalStrategies: vi.fn(),
+  listRetrievalStrategyVersions: vi.fn(),
+  previewRetrieval: vi.fn(),
+  restoreRetrievalExperiment: vi.fn(),
+  restoreRetrievalStrategy: vi.fn(),
+  restoreRetrievalStrategyVersion: vi.fn(),
+  setRetrievalStrategyActive: vi.fn(),
+  updateRetrievalStrategy: vi.fn(),
 }))
 
 vi.mock('@/api/evaluations', () => ({
   getEvaluationCases: vi.fn(),
 }))
+
+const configs = [
+  { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
+  { chunk_size: 400, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
+  { chunk_size: 800, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
+  { chunk_size: 600, chunk_overlap: 100, top_k: 3, rerank_enabled: false, rerank_top_n: 3, score_threshold: 0.35 },
+  { chunk_size: 600, chunk_overlap: 100, top_k: 8, rerank_enabled: false, rerank_top_n: 8, score_threshold: 0.35 },
+  { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: true, rerank_top_n: 5, score_threshold: 0.35 },
+]
+
+function strategyFixtures(): experimentsApi.RetrievalStrategy[] {
+  return configs.map((config, index) => ({
+    id: index + 1,
+    name: '基线 ' + String.fromCharCode(65 + index) + ' · ' + (index === 5 ? '重排' : '实验'),
+    description: '测试策略',
+    builtin_key: 'baseline_' + (index + 1),
+    config,
+    is_builtin: true,
+    version: 1,
+    is_active: true,
+    archived_at: null,
+    created_at: '2026-09-15T00:00:00Z',
+    updated_at: '2026-09-15T00:00:00Z',
+  }))
+}
 
 function summary(status: experimentsApi.ExperimentSummary['status'] = 'RUNNING'): experimentsApi.ExperimentSummary {
   return {
@@ -30,6 +73,7 @@ function summary(status: experimentsApi.ExperimentSummary['status'] = 'RUNNING')
 }
 
 function experimentDetail(status: experimentsApi.ExperimentDetail['status'] = 'COMPLETED'): experimentsApi.ExperimentDetail {
+  const strategies = strategyFixtures()
   return {
     ...summary(status),
     embedding_signature: {
@@ -52,21 +96,21 @@ function experimentDetail(status: experimentsApi.ExperimentDetail['status'] = 'C
       rerank_model: null,
       prompt_version: 'labor_langchain_v1',
     },
+    case_count: 60,
     best_config_index: status === 'COMPLETED' ? 5 : null,
-    config_results: status === 'COMPLETED' ? [0, 1, 2, 3, 4, 5].map((config_index) => ({
+    strategy_snapshots: strategies.map((strategy) => ({
+      strategy_id: strategy.id,
+      name: strategy.name,
+      version: strategy.version,
+      config: strategy.config,
+    })),
+    config_results: status === 'COMPLETED' ? configs.map((config, config_index) => ({
       config_index,
-      config: {
-        chunk_size: config_index === 1 ? 400 : config_index === 2 ? 800 : 600,
-        chunk_overlap: 100,
-        top_k: config_index === 3 ? 3 : config_index === 4 ? 8 : 5,
-        rerank_enabled: config_index === 5,
-        rerank_top_n: config_index === 3 ? 3 : config_index === 4 ? 8 : 5,
-        score_threshold: 0.35,
-      },
+      config,
       accuracy: 0.8,
       reject_rate: 0.7,
       citation_hit_rate: 0.9,
-      avg_retrieval_ms: 12.5,
+      avg_retrieval_ms: 12.5 + config_index,
     })) : [],
     results: status === 'COMPLETED' ? [{
       config_index: 5,
@@ -92,6 +136,28 @@ function experimentDetail(status: experimentsApi.ExperimentDetail['status'] = 'C
   }
 }
 
+const previewResult: experimentsApi.RetrievalPreview = {
+  strategy_id: 6,
+  strategy_name: '基线 F · 重排',
+  strategy_version: 1,
+  index_mode: 'PRODUCTION_INDEX_REUSE',
+  limitations: ['快速试跑复用生产索引', 'Chunk Size 与 Chunk Overlap 不会重新切分'],
+  question: '公司拖欠工资，我应该准备什么材料？',
+  rewritten_question: '公司拖欠工资需要准备什么材料',
+  answer: '**适用情形/简要结论**\n\n请准备劳动合同、工资流水等材料。',
+  refused: false,
+  retrieval_ms: 120,
+  retrieved_sources: [],
+  citations: [],
+  trace: [{
+    stage: '文本分块',
+    status: 'completed',
+    detail: '试跑复用生产索引',
+    duration_ms: null,
+  }],
+  config: configs[5],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.useRealTimers()
@@ -103,99 +169,164 @@ beforeEach(() => {
     experiment_id: 10,
     status: 'PENDING',
     progress_current: 0,
-    progress_total: 360,
+    progress_total: 120,
     error_message: null,
   })
+  vi.mocked(experimentsApi.listRetrievalStrategies).mockResolvedValue(strategyFixtures())
+  vi.mocked(experimentsApi.previewRetrieval).mockResolvedValue(previewResult)
   vi.mocked(evaluationsApi.getEvaluationCases).mockResolvedValue({
-    items: [], page: 1, size: 100, total: 0, pages: 0,
+    items: [], page: 1, size: 100, total: 60, pages: 1,
   })
 })
 
 afterEach(() => vi.useRealTimers())
 
-describe('RetrievalExperimentView', () => {
-  it('shows the six fixed A–F baseline configurations', async () => {
-    const wrapper = shallowMount(RetrievalExperimentView)
-    await flushPromises()
+async function mountView() {
+  const wrapper = shallowMount(RetrievalExperimentView)
+  await flushPromises()
+  return wrapper
+}
 
-    expect(wrapper.text()).toContain('600')
-    expect(wrapper.text()).toContain('400')
-    expect(wrapper.text()).toContain('800')
-    expect(wrapper.text()).toContain('A')
-    expect(wrapper.text()).toContain('F')
-    expect(wrapper.text()).toContain('Rerank Top-N')
+describe('RetrievalExperimentView', () => {
+  it('does not preselect formal experiment strategies or render global comparison controls', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm as unknown as {
+      experimentName: string
+      experimentStrategyIds: number[]
+    }
+
+    expect(vm.experimentStrategyIds).toEqual([])
+    expect(wrapper.text()).not.toContain('已选 6 组策略')
+    expect(wrapper.text()).not.toContain('对比已选')
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(wrapper.findAll('.strategy-card')).toHaveLength(6)
+    expect(wrapper.find('.experiment-create-actions').exists()).toBe(true)
+    expect(wrapper.find('.experiment-create-hint').exists()).toBe(true)
+
+    vm.experimentName = '劳动权益检索实验'
+    await wrapper.get('form').trigger('submit')
+    expect(experimentsApi.createExperiment).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('检索策略对比实验至少需要选择两条策略')
     wrapper.unmount()
   })
 
-  it('requires a name and creates a full six-group experiment with null case_ids', async () => {
-    const wrapper = shallowMount(RetrievalExperimentView)
-    await flushPromises()
+  it('requires at least two strategies before creating a formal experiment', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm as unknown as {
+      experimentName: string
+      experimentStrategyIds: number[]
+    }
 
+    vm.experimentName = '劳动权益检索实验'
+    vm.experimentStrategyIds = [1]
     await wrapper.get('form').trigger('submit')
     expect(experimentsApi.createExperiment).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('请填写实验名称')
+    expect(wrapper.text()).toContain('检索策略对比实验至少需要选择两条策略')
 
-    await wrapper.findComponent(ElInput).vm.$emit('update:modelValue', '劳动权益检索实验')
+    vm.experimentStrategyIds = [1, 2]
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.experiment-create-hint').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-
     expect(experimentsApi.createExperiment).toHaveBeenCalledWith({
       name: '劳动权益检索实验',
+      strategy_ids: [1, 2],
       case_ids: null,
       case_scope: 'BUILTIN_BASELINE',
       answer_style: 'plain',
-      configs: [
-        { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
-        { chunk_size: 400, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
-        { chunk_size: 800, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 },
-        { chunk_size: 600, chunk_overlap: 100, top_k: 3, rerank_enabled: false, rerank_top_n: 3, score_threshold: 0.35 },
-        { chunk_size: 600, chunk_overlap: 100, top_k: 8, rerank_enabled: false, rerank_top_n: 8, score_threshold: 0.35 },
-        { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: true, rerank_top_n: 5, score_threshold: 0.35 },
-      ],
     })
     wrapper.unmount()
   })
 
-  it('shows per-group metrics and experimental chunk sources', async () => {
+  it('selects a strategy by clicking its card or the quick-validation selector', async () => {
+    const wrapper = await mountView()
+    const strategyCard = wrapper.findAll('.strategy-card').at(5)!
+    expect(wrapper.text()).not.toContain('单题试跑')
+    expect(strategyCard.attributes('role')).toBe('button')
+    await strategyCard.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(experimentsApi.previewRetrieval).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.strategy-card').at(5)!.classes()).toContain('strategy-card-preview-selected')
+
+    const previewSelect = wrapper.findAllComponents(ElSelect).at(0)!
+    await previewSelect.vm.$emit('update:modelValue', 6)
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as unknown as { previewStrategyId: number }).previewStrategyId).toBe(6)
+
+    const startButton = wrapper.find('.preview-submit')
+    expect(startButton.exists()).toBe(true)
+    const questionInput = wrapper.find('.preview-question-field').findComponent(ElInput)
+    expect(questionInput.exists()).toBe(true)
+    expect(questionInput.props('type')).toBe('text')
+    expect(wrapper.find('.preview-limitations').exists()).toBe(true)
+    await startButton.trigger('click')
+    await flushPromises()
+
+    expect(experimentsApi.previewRetrieval).toHaveBeenCalledWith({
+      question: '公司拖欠工资，我应该准备什么材料？',
+      answer_style: 'plain',
+      strategy_id: 6,
+    })
+    expect(wrapper.text()).toContain('基线 F · 重排 · v1')
+    expect(wrapper.text()).toContain('Chunk Size 与 Chunk Overlap 不会重新切分')
+    expect(wrapper.find('.preview-result-toolbar').exists()).toBe(true)
+    expect(wrapper.findComponent(MarkdownContent).props('content')).toBe(previewResult.answer)
+
+    const resultActions = wrapper.findAll('.preview-result-action')
+    expect(resultActions).toHaveLength(2)
+    const vm = wrapper.vm as unknown as { previewResultCollapsed: boolean; previewResult?: experimentsApi.RetrievalPreview }
+    await resultActions[0].trigger('click')
+    expect(vm.previewResultCollapsed).toBe(true)
+    expect(wrapper.find('.preview-answer').exists()).toBe(false)
+
+    await wrapper.find('.preview-result-action').trigger('click')
+    expect(vm.previewResultCollapsed).toBe(false)
+    expect(wrapper.find('.preview-answer').exists()).toBe(true)
+
+    await wrapper.findAll('.preview-result-action').at(1)!.trigger('click')
+    expect(vm.previewResult).toBeUndefined()
+    expect(wrapper.find('.preview-result-toolbar').exists()).toBe(false)
+    expect(wrapper.findComponent(MarkdownContent).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the timeout message without misreporting a connection failure', async () => {
+    const wrapper = await mountView()
+    vi.mocked(experimentsApi.previewRetrieval).mockRejectedValueOnce(
+      new axios.AxiosError('timeout', 'ECONNABORTED'),
+    )
+    const startButton = wrapper.find('.preview-submit')
+    expect(startButton.exists()).toBe(true)
+    await startButton.trigger('click')
+    await flushPromises()
+
+    expect(getErrorMessage(new axios.AxiosError('timeout', 'ECONNABORTED'))).toBe('请求处理超时，请稍后重试')
+    expect(wrapper.text()).toContain('请求处理超时，请稍后重试')
+    expect(wrapper.text()).not.toContain('无法连接后端')
+    wrapper.unmount()
+  })
+
+  it('calculates the estimated run count from the loaded case count', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm as unknown as { experimentStrategyIds: number[] }
+    vm.experimentStrategyIds = [1, 2, 6]
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('3 个策略 × 60 条问题 = 180 题次')
+    wrapper.unmount()
+  })
+
+  it('renders every strategy in the result table and generates a structured conclusion', async () => {
     vi.mocked(experimentsApi.getExperiments).mockResolvedValue({
       items: [summary('COMPLETED')], page: 1, size: 10, total: 1, pages: 1,
     })
     vi.mocked(experimentsApi.getExperiment).mockResolvedValue(experimentDetail())
 
-    const wrapper = shallowMount(RetrievalExperimentView)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('当前最优配置：F')
-    expect(wrapper.text()).toContain('引用命中率')
-    expect(wrapper.text()).toContain('90.0%')
-    await wrapper.findAll('.experiment-link').find((button) => button.text() === 'F · 最优')?.trigger('click')
-    expect(wrapper.text()).toContain('用例 #12')
-    expect(wrapper.text()).toContain('实验分块第 7 段')
-    expect(wrapper.text()).toContain('不对应原评测集中的来源段号')
-    wrapper.unmount()
-  })
-
-  it('polls detail every two seconds and stops after completion', async () => {
-    vi.useFakeTimers()
-    vi.mocked(experimentsApi.getExperiments).mockResolvedValue({
-      items: [summary()], page: 1, size: 10, total: 1, pages: 1,
-    })
-    vi.mocked(experimentsApi.getExperiment)
-      .mockResolvedValueOnce(experimentDetail('RUNNING'))
-      .mockResolvedValueOnce(experimentDetail('COMPLETED'))
-
-    const wrapper = shallowMount(RetrievalExperimentView)
-    await flushPromises()
-    expect(experimentsApi.getExperiment).toHaveBeenCalledTimes(1)
-
-    await vi.advanceTimersByTimeAsync(1999)
-    expect(experimentsApi.getExperiment).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(1)
-    await flushPromises()
-
-    expect(experimentsApi.getExperiment).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('已完成')
-    expect(vi.getTimerCount()).toBe(0)
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('实验结论')
+    expect(wrapper.text()).toContain('本次实验共比较 6 条策略、60 条测试问题。')
+    for (const strategy of strategyFixtures()) expect(wrapper.text()).toContain(strategy.name)
+    expect(wrapper.text()).toContain('当前最优策略：基线 F · 重排 · v1')
     wrapper.unmount()
   })
 })
