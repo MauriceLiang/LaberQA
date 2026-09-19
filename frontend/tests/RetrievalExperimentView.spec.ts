@@ -200,6 +200,8 @@ describe('RetrievalExperimentView', () => {
     expect(wrapper.text()).not.toContain('对比已选')
     expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
     expect(wrapper.findAll('.strategy-card')).toHaveLength(6)
+    expect(wrapper.find('.experiment-create-actions').exists()).toBe(true)
+    expect(wrapper.find('.experiment-create-hint').exists()).toBe(true)
 
     vm.experimentName = '劳动权益检索实验'
     await wrapper.get('form').trigger('submit')
@@ -222,6 +224,8 @@ describe('RetrievalExperimentView', () => {
     expect(wrapper.text()).toContain('检索策略对比实验至少需要选择两条策略')
 
     vm.experimentStrategyIds = [1, 2]
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.experiment-create-hint').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(experimentsApi.createExperiment).toHaveBeenCalledWith({

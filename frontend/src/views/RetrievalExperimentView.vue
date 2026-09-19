@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessage, ElMessageBox, ElOption, ElSelect, ElSwitch } from 'element-plus'
+import { WarningFilled } from '@element-plus/icons-vue'
 
 import {
   createExperiment,
@@ -944,7 +945,7 @@ onBeforeUnmount(() => {
               />
             </ElSelect>
           </label>
-          <label>
+          <label class="experiment-case-scope-field">
             <span>评测问题集</span>
             <ElSelect
               :model-value="caseScope"
@@ -957,7 +958,7 @@ onBeforeUnmount(() => {
               <ElOption label="自定义选择" value="SELECTED" />
             </ElSelect>
           </label>
-          <label>
+          <label class="experiment-answer-style-field">
             <span>回答风格</span>
             <ElSelect v-model="answerStyle" class="experiment-create-select" placeholder="使用默认值" aria-label="回答风格">
               <ElOption label="使用默认值" value="" />
@@ -985,12 +986,20 @@ onBeforeUnmount(() => {
               />
             </ElSelect>
           </label>
-          <p class="experiment-estimate" role="status">
-            本次实验预计执行：{{ experimentStrategies.length }} 个策略 × {{ experimentCaseCount }} 条问题 = {{ estimatedRuns }} 题次
-          </p>
-          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
-            {{ creating ? '创建中…' : '创建实验' }}
-          </ElButton>
+          <div class="experiment-create-actions">
+            <p class="experiment-estimate" role="status">
+              本次实验预计执行：{{ experimentStrategies.length }} 个策略 × {{ experimentCaseCount }} 条问题 = {{ estimatedRuns }} 题次
+            </p>
+            <div class="experiment-create-action-end">
+              <span v-if="experimentStrategies.length < 2" class="experiment-create-hint" role="status">
+                <WarningFilled aria-hidden="true" />
+                至少选择两条策略
+              </span>
+              <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
+                {{ creating ? '创建中…' : '创建实验' }}
+              </ElButton>
+            </div>
+          </div>
         </form>
       </div>
       <p v-if="caseError" class="experiment-error" role="alert">评测用例加载失败：{{ caseError }}</p>
@@ -1539,9 +1548,9 @@ onBeforeUnmount(() => {
 
 .experiment-create-form {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) minmax(170px, 0.8fr) minmax(150px, 0.7fr);
-  align-items: end;
-  gap: 14px 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px 24px;
 }
 
 .experiment-create-form label {
@@ -1585,33 +1594,79 @@ onBeforeUnmount(() => {
 }
 
 .experiment-name-field {
-  grid-column: 1 / span 2;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.experiment-strategy-field {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.experiment-case-scope-field {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.experiment-answer-style-field {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .experiment-case-select-label {
   grid-column: 1 / -1;
+  grid-row: auto;
 }
 
-.experiment-strategy-field {
+.experiment-create-actions {
+  display: flex;
   grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #edf2ef;
 }
 
 .experiment-estimate {
-  grid-column: 1 / span 3;
   margin: 0;
   color: #536077;
   font-size: 12px;
   line-height: 1.5;
 }
 
+.experiment-create-action-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.experiment-create-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8793a4;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.experiment-create-hint :deep(svg) {
+  width: 18px;
+  height: 18px;
+  color: #d59a4b;
+}
+
 .experiment-create-form .experiment-primary {
-  grid-column: 4;
+  flex: 0 0 auto;
   width: 132px;
   min-width: 108px;
   min-height: 38px;
   height: 38px;
-  align-self: end;
-  justify-self: end;
   padding: 0 12px;
   white-space: nowrap;
 }
@@ -2375,20 +2430,21 @@ onBeforeUnmount(() => {
   }
 
   .experiment-create-form {
-    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr);
+    grid-template-columns: 1fr;
   }
 
-  .experiment-estimate {
-    grid-column: 1 / -1;
-  }
-
-  .experiment-name-field {
-    grid-column: auto;
+  .experiment-name-field,
+  .experiment-strategy-field,
+  .experiment-case-scope-field,
+  .experiment-answer-style-field,
+  .experiment-case-select-label,
+  .experiment-create-actions {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .experiment-create-form .experiment-primary {
     width: 108px;
-    grid-column: 2;
   }
 
   .experiment-summary-row {
@@ -2428,14 +2484,19 @@ onBeforeUnmount(() => {
     white-space: normal;
   }
 
-  .experiment-name-field,
-  .experiment-strategy-field,
-  .experiment-estimate {
-    grid-column: 1;
+  .experiment-create-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .experiment-create-action-end {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
   }
 
   .experiment-create-form .experiment-primary {
-    grid-column: 1;
     width: 100%;
   }
 
