@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessage, ElMessageBox, ElOption, ElSelect, ElSwitch } from 'element-plus'
 
 import {
@@ -34,6 +34,7 @@ import {
 } from '@/api/experiments'
 import { getErrorMessage } from '@/api/http'
 import { getEvaluationCases, type EvaluationCase } from '@/api/evaluations'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 
 const experimentGroups: Array<{ label: string; config: ExperimentConfig }> = [
   { label: 'A', config: { chunk_size: 600, chunk_overlap: 100, top_k: 5, rerank_enabled: false, rerank_top_n: 5, score_threshold: 0.35 } },
@@ -79,6 +80,7 @@ const previewStrategyId = ref<number>()
 const experimentStrategyIds = ref<number[]>([])
 const strategyEditorVisible = ref(false)
 const strategyEditorId = ref<number>()
+const strategyEditorCopy = ref(false)
 const strategySaving = ref(false)
 const strategyEditorError = ref('')
 const strategyVersionVisible = ref(false)
@@ -96,6 +98,8 @@ const previewQuestion = ref('公司拖欠工资，我应该准备什么材料？
 const previewLoading = ref(false)
 const previewError = ref('')
 const previewResult = ref<RetrievalPreview>()
+const previewResultCollapsed = ref(false)
+const previewPanel = ref<HTMLElement>()
 const deletingExperimentId = ref<number>()
 const copyingExperimentId = ref<number>()
 const archivingExperimentId = ref<number>()
@@ -117,7 +121,10 @@ const experimentCaseCount = computed(() => {
   return evaluationCaseTotal.value
 })
 const estimatedRuns = computed(() => experimentStrategies.value.length * experimentCaseCount.value)
-const strategyEditorTitle = computed(() => strategyEditorId.value === undefined ? '新建检索策略' : '编辑检索策略')
+const strategyEditorTitle = computed(() => {
+  if (strategyEditorId.value !== undefined) return '编辑检索策略'
+  return strategyEditorCopy.value ? '编辑策略副本' : '新建检索策略'
+})
 const strategyDraftWarning = computed(() => {
   if (strategyDraft.config.score_threshold >= 0.8) return '阈值较高，可能过滤掉有用材料。建议先试跑确认。'
   if (strategyDraft.config.top_k >= 12) return 'Top-k 较大，可能增加响应耗时和上下文长度。'
@@ -366,6 +373,7 @@ async function restoreStrategy(strategy: RetrievalStrategy) {
 
 function openStrategyEditor(strategy?: RetrievalStrategy) {
   strategyEditorId.value = strategy?.is_builtin ? undefined : strategy?.id
+  strategyEditorCopy.value = !!strategy?.is_builtin
   strategyEditorError.value = ''
   strategyDraft.name = strategy ? `${strategy.name}${strategy.is_builtin ? ' · 副本' : ''}` : ''
   strategyDraft.description = strategy?.description ?? ''
@@ -412,7 +420,7 @@ async function saveStrategy() {
       previewStrategyId.value = saved.id
     }
     strategyEditorVisible.value = false
-    ElMessage.success(strategyEditorId.value === undefined ? '策略已创建' : '策略已更新')
+    ElMessage.success(strategyEditorCopy.value ? '策略副本已创建' : strategyEditorId.value === undefined ? '策略已创建' : '策略已更新')
   } catch (error) {
     strategyEditorError.value = getErrorMessage(error)
   } finally {
@@ -420,7 +428,7 @@ async function saveStrategy() {
   }
 }
 
-function copyStrategy(strategy: RetrievalStrategy) {
+function editStrategy(strategy: RetrievalStrategy) {
   openStrategyEditor(strategy)
 }
 
@@ -481,8 +489,23 @@ async function removeStrategy(strategy: RetrievalStrategy) {
 
 function openPreview(strategy: RetrievalStrategy) {
   previewStrategyId.value = strategy.id
+  clearPreviewResult()
+  void nextTick(() => {
+    const element = previewPanel.value
+    if (element && typeof element.scrollIntoView === 'function') {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  })
+}
+
+function clearPreviewResult() {
   previewResult.value = undefined
+  previewResultCollapsed.value = false
   previewError.value = ''
+}
+
+function togglePreviewResult() {
+  previewResultCollapsed.value = !previewResultCollapsed.value
 }
 
 async function runPreview() {
@@ -500,6 +523,7 @@ async function runPreview() {
   previewLoading.value = true
   previewError.value = ''
   previewResult.value = undefined
+  previewResultCollapsed.value = false
   try {
     const result = await previewRetrieval({
       question,
@@ -755,7 +779,10 @@ onBeforeUnmount(() => {
           v-for="strategy in strategies"
           :key="strategy.id"
           class="strategy-card"
-          :class="{ 'strategy-card-disabled': !strategy.is_active || strategy.archived_at }"
+          :class="{
+            'strategy-card-disabled': !strategy.is_active || strategy.archived_at,
+            'strategy-card-preview-selected': previewStrategyId === strategy.id,
+          }"
         >
           <div class="strategy-card-select">
             <span>{{ strategy.name }} <em>v{{ strategy.version }}</em><em v-if="strategy.archived_at"> · 已归档</em><em v-else-if="!strategy.is_active"> · 已停用</em></span>
@@ -768,8 +795,13 @@ onBeforeUnmount(() => {
             <div><dt>阈值</dt><dd>{{ strategy.config.score_threshold.toFixed(2) }}</dd></div>
           </dl>
           <div class="strategy-card-actions">
-            <ElButton text :disabled="!strategy.is_active || !!strategy.archived_at" @click="openPreview(strategy)">单题试跑</ElButton>
-            <ElButton text @click="copyStrategy(strategy)">{{ strategy.is_builtin ? '复制' : '编辑' }}</ElButton>
+            <ElButton
+              text
+              :disabled="!strategy.is_active || !!strategy.archived_at"
+              :aria-pressed="previewStrategyId === strategy.id"
+              @click="openPreview(strategy)"
+            >单题试跑</ElButton>
+            <ElButton text @click="editStrategy(strategy)">编辑</ElButton>
             <ElButton text @click="openStrategyVersions(strategy)">版本</ElButton>
             <ElButton
               v-if="!strategy.is_builtin && !strategy.archived_at"
@@ -790,7 +822,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="experiment-panel preview-panel" aria-labelledby="preview-title">
+    <section ref="previewPanel" class="experiment-panel preview-panel" aria-labelledby="preview-title">
       <div class="experiment-heading">
         <div>
           <h2 id="preview-title">单题快速验证</h2>
@@ -819,35 +851,51 @@ onBeforeUnmount(() => {
       <p v-if="previewError" class="experiment-error" role="alert">{{ previewError }}</p>
       <div v-if="previewLoading" class="preview-loading">正在执行检索链路…</div>
       <template v-if="previewResult">
-        <div class="preview-result-identity">
-          <strong>{{ previewResult.strategy_name }} · v{{ previewResult.strategy_version }}</strong>
-          <span>{{ previewResult.index_mode }}</span>
+        <div class="preview-result-toolbar">
+          <div class="preview-result-identity">
+            <strong>{{ previewResult.strategy_name }} · v{{ previewResult.strategy_version }}</strong>
+            <span>{{ previewResult.index_mode }}</span>
+          </div>
+          <div class="preview-result-actions">
+            <ElButton
+              class="preview-result-action"
+              text
+              :aria-expanded="!previewResultCollapsed"
+              aria-controls="preview-result-content"
+              @click="togglePreviewResult"
+            >
+              {{ previewResultCollapsed ? '展开结果' : '收起结果' }}
+            </ElButton>
+            <ElButton class="preview-result-action" text @click="clearPreviewResult">清空结果</ElButton>
+          </div>
         </div>
-        <p class="experiment-inline-hint">运行限制：{{ previewResult.limitations.join('；') }}</p>
-        <div class="preview-answer" :class="{ 'preview-answer-refused': previewResult.refused }">
-          <div class="preview-answer-heading"><strong>{{ previewResult.refused ? '证据门控结果：建议拒答' : '试跑回答' }}</strong><span>{{ previewResult.retrieval_ms }} ms</span></div>
-          <p>{{ previewResult.answer }}</p>
+        <div id="preview-result-content" v-if="!previewResultCollapsed" class="preview-result-content">
+          <p class="experiment-inline-hint">运行限制：{{ previewResult.limitations.join('；') }}</p>
+          <div class="preview-answer" :class="{ 'preview-answer-refused': previewResult.refused }">
+            <div class="preview-answer-heading"><strong>{{ previewResult.refused ? '证据门控结果：建议拒答' : '试跑回答' }}</strong><span>{{ previewResult.retrieval_ms }} ms</span></div>
+            <MarkdownContent class="preview-answer-markdown" :content="previewResult.answer" />
+          </div>
+          <div class="preview-trace">
+            <h3>链路检查</h3>
+            <ol>
+              <li v-for="stage in previewResult.trace" :key="stage.stage">
+                <span class="preview-trace-dot" :class="'preview-trace-' + stage.status" aria-hidden="true" />
+                <div><strong>{{ stage.stage }}</strong><span>{{ stage.detail }}</span></div>
+              </li>
+            </ol>
+          </div>
+          <details class="preview-sources" :open="previewResult.retrieved_sources.length > 0">
+            <summary>召回片段（{{ previewResult.retrieved_sources.length }}）</summary>
+            <ul v-if="previewResult.retrieved_sources.length > 0">
+              <li v-for="source in previewResult.retrieved_sources" :key="source.chunk_id">
+                <strong>{{ source.file_name }} · 第 {{ source.chunk_no }} 段</strong>
+                <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}</span>
+                <p>{{ source.content }}</p>
+              </li>
+            </ul>
+            <p v-else class="experiment-muted">没有召回片段，建议降低阈值或检查资料覆盖范围。</p>
+          </details>
         </div>
-        <div class="preview-trace">
-          <h3>链路检查</h3>
-          <ol>
-            <li v-for="stage in previewResult.trace" :key="stage.stage">
-              <span class="preview-trace-dot" :class="'preview-trace-' + stage.status" aria-hidden="true" />
-              <div><strong>{{ stage.stage }}</strong><span>{{ stage.detail }}</span></div>
-            </li>
-          </ol>
-        </div>
-        <details class="preview-sources" :open="previewResult.retrieved_sources.length > 0">
-          <summary>召回片段（{{ previewResult.retrieved_sources.length }}）</summary>
-          <ul v-if="previewResult.retrieved_sources.length > 0">
-            <li v-for="source in previewResult.retrieved_sources" :key="source.chunk_id">
-              <strong>{{ source.file_name }} · 第 {{ source.chunk_no }} 段</strong>
-              <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}</span>
-              <p>{{ source.content }}</p>
-            </li>
-          </ul>
-          <p v-else class="experiment-muted">没有召回片段，建议降低阈值或检查资料覆盖范围。</p>
-        </details>
       </template>
     </section>
 
@@ -911,12 +959,6 @@ onBeforeUnmount(() => {
               <ElOption label="严谨版" value="legal" />
             </ElSelect>
           </label>
-          <p class="experiment-estimate" role="status">
-            本次实验预计执行：{{ experimentStrategies.length }} 个策略 × {{ experimentCaseCount }} 条问题 = {{ estimatedRuns }} 题次
-          </p>
-          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
-            {{ creating ? '创建中…' : '创建实验' }}
-          </ElButton>
           <label v-if="caseScope === 'SELECTED'" class="experiment-case-select-label">
             <span>选择评测用例</span>
             <ElSelect
@@ -937,6 +979,12 @@ onBeforeUnmount(() => {
               />
             </ElSelect>
           </label>
+          <p class="experiment-estimate" role="status">
+            本次实验预计执行：{{ experimentStrategies.length }} 个策略 × {{ experimentCaseCount }} 条问题 = {{ estimatedRuns }} 题次
+          </p>
+          <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
+            {{ creating ? '创建中…' : '创建实验' }}
+          </ElButton>
         </form>
       </div>
       <p v-if="caseError" class="experiment-error" role="alert">评测用例加载失败：{{ caseError }}</p>
@@ -1226,50 +1274,101 @@ onBeforeUnmount(() => {
 
 .preview-form {
   display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.8fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 2fr) 132px;
+  align-items: start;
   gap: 12px;
 }
 
 .preview-form label {
   display: grid;
-  gap: 6px;
+  min-width: 0;
+  gap: 7px;
   color: #758195;
   font-size: 12px;
   line-height: 1.35;
 }
 
 .preview-form label > span {
+  display: block;
   min-height: 16px;
 }
 
+.preview-question-field :deep(.el-textarea),
 .preview-question-field :deep(.el-textarea__inner) {
-  min-height: 74px;
+  width: 100%;
+}
+
+.preview-question-field :deep(.el-textarea__inner) {
+  min-height: 76px;
   padding: 9px 10px;
   color: #354257;
-  border-color: #d8e0da;
+  background: #fff;
+  border: 1px solid #d8e0da;
+  border-radius: 7px;
   box-shadow: none;
   font: inherit;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .preview-submit {
+  align-self: end;
+  width: 132px;
   min-height: 38px;
   height: 38px;
 }
 
-.preview-result-identity {
+.preview-result-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-top: 12px;
+  padding: 9px 11px;
+  background: #f7fbf8;
+  border: 1px solid #e0ede5;
+  border-radius: 8px;
+}
+
+.preview-result-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   color: #315447;
   font-size: 12px;
 }
 
+.preview-result-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .preview-result-identity span {
+  flex: 0 0 auto;
   color: #8793a4;
   font-size: 11px;
+}
+
+.preview-result-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-result-actions :deep(.el-button) {
+  padding: 3px 6px;
+  color: #26705d;
+  font-size: 11px;
+}
+
+.preview-result-content {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
 }
 
 .experiment-heading {
@@ -1400,21 +1499,18 @@ onBeforeUnmount(() => {
 }
 
 .experiment-create-layout {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  align-items: start;
-  gap: 26px;
+  display: block;
 }
 
 .experiment-create-layout .experiment-heading {
-  margin: 3px 0 0;
+  margin: 0 0 14px;
 }
 
 .experiment-create-form {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(140px, 0.8fr) minmax(120px, 0.6fr) 108px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) minmax(170px, 0.8fr) minmax(150px, 0.7fr);
   align-items: end;
-  gap: 12px;
+  gap: 14px 12px;
 }
 
 .experiment-create-form label {
@@ -1466,11 +1562,11 @@ onBeforeUnmount(() => {
 }
 
 .experiment-strategy-field {
-  grid-column: 1 / span 2;
+  grid-column: 1 / -1;
 }
 
 .experiment-estimate {
-  grid-column: 1 / -1;
+  grid-column: 1 / span 3;
   margin: 0;
   color: #536077;
   font-size: 12px;
@@ -1478,7 +1574,8 @@ onBeforeUnmount(() => {
 }
 
 .experiment-create-form .experiment-primary {
-  width: 108px;
+  grid-column: 4;
+  width: 132px;
   min-width: 108px;
   min-height: 38px;
   height: 38px;
@@ -1938,6 +2035,12 @@ onBeforeUnmount(() => {
   background: #f5f7f6;
 }
 
+.strategy-card-preview-selected {
+  border-color: #76ad92;
+  background: #f7fbf8;
+  box-shadow: 0 4px 14px rgb(18 96 71 / 10%);
+}
+
 .strategy-card-select {
   display: flex;
   align-items: center;
@@ -2122,12 +2225,25 @@ onBeforeUnmount(() => {
   font-weight: 400;
 }
 
-.preview-answer p {
-  margin: 8px 0 0;
+.preview-answer-markdown {
+  margin-top: 8px;
   color: #354257;
   font-size: 13px;
   line-height: 1.7;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview-answer-markdown > * {
+  margin: 0;
+}
+
+.preview-answer-markdown > * + * {
+  margin-top: 0.75em;
+}
+
+.preview-answer-markdown :deep(ul),
+.preview-answer-markdown :deep(ol) {
+  padding-left: 1.45em;
 }
 
 .preview-trace h3 {
@@ -2227,13 +2343,12 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .experiment-create-layout {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
   .experiment-create-form {
     grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr);
+  }
+
+  .experiment-estimate {
+    grid-column: 1 / -1;
   }
 
   .experiment-name-field {
@@ -2283,7 +2398,8 @@ onBeforeUnmount(() => {
   }
 
   .experiment-name-field,
-  .experiment-strategy-field {
+  .experiment-strategy-field,
+  .experiment-estimate {
     grid-column: 1;
   }
 
@@ -2298,6 +2414,15 @@ onBeforeUnmount(() => {
 
   .preview-submit {
     width: 100%;
+  }
+
+  .preview-result-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .preview-result-actions {
+    align-self: flex-end;
   }
 
   .experiment-progress {

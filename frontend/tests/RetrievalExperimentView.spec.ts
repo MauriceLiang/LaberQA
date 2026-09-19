@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as experimentsApi from '@/api/experiments'
 import * as evaluationsApi from '@/api/evaluations'
 import { getErrorMessage } from '@/api/http'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 import RetrievalExperimentView from '@/views/RetrievalExperimentView.vue'
 
 vi.mock('@/api/experiments', () => ({
@@ -143,7 +144,7 @@ const previewResult: experimentsApi.RetrievalPreview = {
   limitations: ['快速试跑复用生产索引', 'Chunk Size 与 Chunk Overlap 不会重新切分'],
   question: '公司拖欠工资，我应该准备什么材料？',
   rewritten_question: '公司拖欠工资需要准备什么材料',
-  answer: '请准备劳动合同、工资流水等材料。',
+  answer: '**适用情形/简要结论**\n\n请准备劳动合同、工资流水等材料。',
   refused: false,
   retrieval_ms: 120,
   retrieved_sources: [],
@@ -238,7 +239,9 @@ describe('RetrievalExperimentView', () => {
     const previewButton = wrapper.findAll('.strategy-card-actions').at(5)!.findComponent(ElButton)
     expect(previewButton.exists()).toBe(true)
     await previewButton.trigger('click')
+    await wrapper.vm.$nextTick()
     expect(experimentsApi.previewRetrieval).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.strategy-card').at(5)!.classes()).toContain('strategy-card-preview-selected')
     const startButton = wrapper.find('.preview-submit')
     expect(startButton.exists()).toBe(true)
     await startButton.trigger('click')
@@ -251,6 +254,24 @@ describe('RetrievalExperimentView', () => {
     })
     expect(wrapper.text()).toContain('基线 F · 重排 · v1')
     expect(wrapper.text()).toContain('Chunk Size 与 Chunk Overlap 不会重新切分')
+    expect(wrapper.find('.preview-result-toolbar').exists()).toBe(true)
+    expect(wrapper.findComponent(MarkdownContent).props('content')).toBe(previewResult.answer)
+
+    const resultActions = wrapper.findAll('.preview-result-action')
+    expect(resultActions).toHaveLength(2)
+    const vm = wrapper.vm as unknown as { previewResultCollapsed: boolean; previewResult?: experimentsApi.RetrievalPreview }
+    await resultActions[0].trigger('click')
+    expect(vm.previewResultCollapsed).toBe(true)
+    expect(wrapper.find('.preview-answer').exists()).toBe(false)
+
+    await wrapper.find('.preview-result-action').trigger('click')
+    expect(vm.previewResultCollapsed).toBe(false)
+    expect(wrapper.find('.preview-answer').exists()).toBe(true)
+
+    await wrapper.findAll('.preview-result-action').at(1)!.trigger('click')
+    expect(vm.previewResult).toBeUndefined()
+    expect(wrapper.find('.preview-result-toolbar').exists()).toBe(false)
+    expect(wrapper.findComponent(MarkdownContent).exists()).toBe(false)
     wrapper.unmount()
   })
 
