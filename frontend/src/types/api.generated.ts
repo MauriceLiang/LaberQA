@@ -66,7 +66,8 @@ export interface paths {
         get: operations["get_document_api_documents__id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a document and its derived data */
+        delete: operations["delete_document_api_documents__id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -282,6 +283,127 @@ export interface paths {
         patch: operations["update_missing_knowledge_api_missing_knowledge__id__patch"];
         trace?: never;
     };
+    "/api/retrieval-strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retrieval strategies */
+        get: operations["list_retrieval_strategies_api_retrieval_strategies_get"];
+        put?: never;
+        /** Create a retrieval strategy */
+        post: operations["create_retrieval_strategy_api_retrieval_strategies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable or disable a custom retrieval strategy */
+        patch: operations["update_retrieval_strategy_status_api_retrieval_strategies__id__status_patch"];
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retrieval strategy versions */
+        get: operations["list_retrieval_strategy_versions_api_retrieval_strategies__id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}/versions/{version}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore a retrieval strategy version */
+        post: operations["restore_retrieval_strategy_version_api_retrieval_strategies__id__versions__version__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a custom retrieval strategy */
+        post: operations["archive_retrieval_strategy_api_retrieval_strategies__id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived custom retrieval strategy */
+        post: operations["restore_retrieval_strategy_api_retrieval_strategies__id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-strategies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom retrieval strategy */
+        delete: operations["delete_retrieval_strategy_api_retrieval_strategies__id__delete"];
+        options?: never;
+        head?: never;
+        /** Update a custom retrieval strategy */
+        patch: operations["update_retrieval_strategy_api_retrieval_strategies__id__patch"];
+        trace?: never;
+    };
     "/api/retrieval-experiments": {
         parameters: {
             query?: never;
@@ -300,6 +422,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retrieval-experiments/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview one retrieval experiment query */
+        post: operations["preview_retrieval_experiment_api_retrieval_experiments_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-experiments/{id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy a retrieval experiment */
+        post: operations["copy_experiment_api_retrieval_experiments__id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-experiments/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export retrieval experiment results */
+        get: operations["export_experiment_api_retrieval_experiments__id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-experiments/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a completed retrieval experiment */
+        post: operations["archive_experiment_api_retrieval_experiments__id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrieval-experiments/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived retrieval experiment */
+        post: operations["restore_experiment_api_retrieval_experiments__id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retrieval-experiments/{id}": {
         parameters: {
             query?: never;
@@ -311,7 +518,8 @@ export interface paths {
         get: operations["get_experiment_api_retrieval_experiments__id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a completed retrieval experiment */
+        delete: operations["delete_experiment_api_retrieval_experiments__id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -390,6 +598,14 @@ export interface components {
             message: string;
             data: components["schemas"]["ExperimentJob"] | null;
         };
+        /** ApiResponse[ExperimentSummary] */
+        ApiResponse_ExperimentSummary_: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            data: components["schemas"]["ExperimentSummary"] | null;
+        };
         /** ApiResponse[HealthData] */
         ApiResponse_HealthData_: {
             /** Code */
@@ -463,6 +679,22 @@ export interface components {
             message: string;
             data: components["schemas"]["PageResult_MissingKnowledgeItem_"] | null;
         };
+        /** ApiResponse[RetrievalPreviewResponse] */
+        ApiResponse_RetrievalPreviewResponse_: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            data: components["schemas"]["RetrievalPreviewResponse"] | null;
+        };
+        /** ApiResponse[RetrievalStrategy] */
+        ApiResponse_RetrievalStrategy_: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            data: components["schemas"]["RetrievalStrategy"] | null;
+        };
         /** ApiResponse[SessionItem] */
         ApiResponse_SessionItem_: {
             /** Code */
@@ -488,6 +720,24 @@ export interface components {
             /** Data */
             data: components["schemas"]["MessageItem"][] | null;
         };
+        /** ApiResponse[list[RetrievalStrategyVersion]] */
+        ApiResponse_list_RetrievalStrategyVersion__: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            /** Data */
+            data: components["schemas"]["RetrievalStrategyVersion"][] | null;
+        };
+        /** ApiResponse[list[RetrievalStrategy]] */
+        ApiResponse_list_RetrievalStrategy__: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            /** Data */
+            data: components["schemas"]["RetrievalStrategy"][] | null;
+        };
         /** ApiResponse[list[SessionItem]] */
         ApiResponse_list_SessionItem__: {
             /** Code */
@@ -496,6 +746,15 @@ export interface components {
             message: string;
             /** Data */
             data: components["schemas"]["SessionItem"][] | null;
+        };
+        /** ApiResponse[str] */
+        ApiResponse_str_: {
+            /** Code */
+            code: number;
+            /** Message */
+            message: string;
+            /** Data */
+            data: string | null;
         };
         /** Body_upload_document_api_documents_upload_post */
         Body_upload_document_api_documents_upload_post: {
@@ -607,19 +866,22 @@ export interface components {
         };
         /** EvaluationCase */
         EvaluationCase: {
-            /** Id */
-            id: number;
             /** Topic */
             topic: string;
             expected_type: components["schemas"]["EvaluationExpectedType"];
             /** Turns */
             turns: string[];
             /** Expected Points */
-            expected_points: string[];
+            expected_points?: string[];
             /** Expected Sources */
-            expected_sources: components["schemas"]["ExpectedSource"][];
-            /** Should Show Compliance */
+            expected_sources?: components["schemas"]["ExpectedSource"][];
+            /**
+             * Should Show Compliance
+             * @default false
+             */
             should_show_compliance: boolean;
+            /** Id */
+            id: number;
             origin: components["schemas"]["EvaluationCaseOrigin"];
             status: components["schemas"]["EvaluationCaseStatus"];
             /** Version */
@@ -629,31 +891,57 @@ export interface components {
             /** Updated At */
             updated_at: string;
             /** Archived At */
-            archived_at: string | null;
+            archived_at?: string | null;
         };
         /** EvaluationCaseCreate */
         EvaluationCaseCreate: {
+            /** Topic */
             topic: string;
             expected_type: components["schemas"]["EvaluationExpectedType"];
+            /** Turns */
             turns: string[];
+            /** Expected Points */
             expected_points?: string[];
+            /** Expected Sources */
             expected_sources?: components["schemas"]["ExpectedSource"][];
+            /**
+             * Should Show Compliance
+             * @default false
+             */
             should_show_compliance: boolean;
         };
-        /** EvaluationCaseOrigin */
+        /**
+         * EvaluationCaseOrigin
+         * @enum {string}
+         */
         EvaluationCaseOrigin: "BUILTIN" | "CUSTOM";
-        /** EvaluationCaseScope */
+        /**
+         * EvaluationCaseScope
+         * @enum {string}
+         */
         EvaluationCaseScope: "BUILTIN_BASELINE" | "ALL_ACTIVE" | "SELECTED";
-        /** EvaluationCaseStatus */
+        /**
+         * EvaluationCaseStatus
+         * @enum {string}
+         */
         EvaluationCaseStatus: "ACTIVE" | "ARCHIVED";
         /** EvaluationCaseUpdate */
         EvaluationCaseUpdate: {
+            /** Topic */
             topic: string;
             expected_type: components["schemas"]["EvaluationExpectedType"];
+            /** Turns */
             turns: string[];
+            /** Expected Points */
             expected_points?: string[];
+            /** Expected Sources */
             expected_sources?: components["schemas"]["ExpectedSource"][];
+            /**
+             * Should Show Compliance
+             * @default false
+             */
             should_show_compliance: boolean;
+            /** Version */
             version: number;
         };
         /**
@@ -704,8 +992,8 @@ export interface components {
             /** Error Message */
             error_message: string | null;
         };
-        /** LangChainRuntimeConfig */
-        LangChainRuntimeConfig: {
+        /** EvaluationRunConfig */
+        EvaluationRunConfig: {
             /** Langchain Version */
             langchain_version: string;
             /** Chat Provider */
@@ -733,40 +1021,12 @@ export interface components {
             rerank_model: string | null;
             /** Prompt Version */
             prompt_version: string;
-        };
-        /** EvaluationRunConfig */
-        EvaluationRunConfig: {
-            /** Langchain Version */
-            langchain_version: string;
-            /** Chat Provider */
-            chat_provider: string;
             answer_style: components["schemas"]["AnswerStyle"];
-            /** @default BUILTIN_BASELINE */
-            case_scope: components["schemas"]["EvaluationCaseScope"];
-            /** Llm Model */
-            llm_model: string;
+            case_scope?: components["schemas"]["EvaluationCaseScope"] | null;
             /** Evaluator Model */
             evaluator_model: string;
             /** Evaluator Prompt Version */
             evaluator_prompt_version: string;
-            /** Embedding Provider */
-            embedding_provider: "local" | "api";
-            /** Embedding Model */
-            embedding_model: string;
-            /** Embedding Normalize */
-            embedding_normalize: boolean;
-            /** Splitter Type */
-            splitter_type: string;
-            /** Splitter Version */
-            splitter_version: string;
-            /** Vectorstore Type */
-            vectorstore_type: string;
-            /** Retrieval Type */
-            retrieval_type: string;
-            /** Rerank Model */
-            rerank_model: string | null;
-            /** Prompt Version */
-            prompt_version: string;
             /** Chunk Size */
             chunk_size: number;
             /** Chunk Overlap */
@@ -840,7 +1100,7 @@ export interface components {
             /** File Name */
             file_name: string;
             /** Chunk No */
-            chunk_no: number | null;
+            chunk_no?: number | null;
         };
         /** ExperimentCaseResult */
         ExperimentCaseResult: {
@@ -895,15 +1155,22 @@ export interface components {
             /** Avg Retrieval Ms */
             avg_retrieval_ms: number | null;
         };
+        /** ExperimentCopy */
+        ExperimentCopy: {
+            /** Name */
+            name: string;
+        };
         /** ExperimentCreate */
         ExperimentCreate: {
             /** Name */
             name: string;
+            /** Strategy Ids */
+            strategy_ids: number[];
+            case_scope: components["schemas"]["EvaluationCaseScope"];
             /** Case Ids */
             case_ids?: number[] | null;
+            /** @default plain */
             answer_style: components["schemas"]["AnswerStyle"];
-            /** Configs */
-            configs: components["schemas"]["ExperimentConfig"][];
         };
         /** ExperimentDetail */
         ExperimentDetail: {
@@ -920,8 +1187,14 @@ export interface components {
             name: string;
             embedding_signature: components["schemas"]["EmbeddingSignature"];
             runtime_config: components["schemas"]["LangChainRuntimeConfig"];
+            /** Archived At */
+            archived_at?: string | null;
             /** Best Config Index */
             best_config_index: number | null;
+            /** Case Count */
+            case_count: number;
+            /** Strategy Snapshots */
+            strategy_snapshots?: components["schemas"]["RetrievalStrategySnapshot"][];
             /** Config Results */
             config_results: components["schemas"]["ExperimentConfigResult"][];
             /** Results */
@@ -956,6 +1229,8 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+            /** Archived At */
+            archived_at?: string | null;
         };
         /**
          * FileType
@@ -988,6 +1263,36 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+        /** LangChainRuntimeConfig */
+        LangChainRuntimeConfig: {
+            /** Langchain Version */
+            langchain_version: string;
+            /** Chat Provider */
+            chat_provider: string;
+            /** Llm Model */
+            llm_model: string;
+            /**
+             * Embedding Provider
+             * @enum {string}
+             */
+            embedding_provider: "local" | "api";
+            /** Embedding Model */
+            embedding_model: string;
+            /** Embedding Normalize */
+            embedding_normalize: boolean;
+            /** Splitter Type */
+            splitter_type: string;
+            /** Splitter Version */
+            splitter_version: string;
+            /** Vectorstore Type */
+            vectorstore_type: string;
+            /** Retrieval Type */
+            retrieval_type: string;
+            /** Rerank Model */
+            rerank_model: string | null;
+            /** Prompt Version */
+            prompt_version: string;
+        };
         /** MaterialChecklistInput */
         MaterialChecklistInput: {
             /** Dispute Type */
@@ -1138,6 +1443,136 @@ export interface components {
             total: number;
             /** Pages */
             pages: number;
+        };
+        /** RetrievalPreviewRequest */
+        RetrievalPreviewRequest: {
+            /** Question */
+            question: string;
+            /** @default plain */
+            answer_style: components["schemas"]["AnswerStyle"];
+            /** Strategy Id */
+            strategy_id: number;
+        };
+        /** RetrievalPreviewResponse */
+        RetrievalPreviewResponse: {
+            /** Strategy Id */
+            strategy_id: number;
+            /** Strategy Name */
+            strategy_name: string;
+            /** Strategy Version */
+            strategy_version: number;
+            /** Index Mode */
+            index_mode: string;
+            /** Limitations */
+            limitations: string[];
+            /** Question */
+            question: string;
+            /** Rewritten Question */
+            rewritten_question: string;
+            /** Answer */
+            answer: string;
+            /** Refused */
+            refused: boolean;
+            /** Retrieval Ms */
+            retrieval_ms: number;
+            /** Retrieved Sources */
+            retrieved_sources: components["schemas"]["CitationItem"][];
+            /** Citations */
+            citations: components["schemas"]["CitationItem"][];
+            /** Trace */
+            trace: components["schemas"]["RetrievalTraceStage"][];
+            config: components["schemas"]["ExperimentConfig"];
+        };
+        /** RetrievalStrategy */
+        RetrievalStrategy: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Builtin Key */
+            builtin_key: string | null;
+            config: components["schemas"]["ExperimentConfig"];
+            /** Is Builtin */
+            is_builtin: boolean;
+            /** Version */
+            version: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Archived At */
+            archived_at: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** RetrievalStrategyCreate */
+        RetrievalStrategyCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            config: components["schemas"]["ExperimentConfig"];
+        };
+        /** RetrievalStrategySnapshot */
+        RetrievalStrategySnapshot: {
+            /** Strategy Id */
+            strategy_id: number;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            config: components["schemas"]["ExperimentConfig"];
+        };
+        /** RetrievalStrategyStatusUpdate */
+        RetrievalStrategyStatusUpdate: {
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** RetrievalStrategyUpdate */
+        RetrievalStrategyUpdate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            config: components["schemas"]["ExperimentConfig"];
+        };
+        /** RetrievalStrategyVersion */
+        RetrievalStrategyVersion: {
+            /** Id */
+            id: number;
+            /** Strategy Id */
+            strategy_id: number;
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            config: components["schemas"]["ExperimentConfig"];
+            /** Created At */
+            created_at: string;
+        };
+        /** RetrievalTraceStage */
+        RetrievalTraceStage: {
+            /** Stage */
+            stage: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "skipped" | "failed";
+            /** Detail */
+            detail: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
         };
         /** SessionItem */
         SessionItem: {
@@ -1403,6 +1838,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_DocumentItem_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Business implementation is scheduled for a later phase */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    delete_document_api_documents__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
             /** @description Invalid business request */
@@ -2206,10 +2735,76 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Successful Response */
             201: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
         };
@@ -2218,15 +2813,83 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path: { id: number };
+            path: {
+                id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
+            /** @description Successful Response */
             200: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
         };
@@ -2235,13 +2898,81 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path: { id: number };
+            path: {
+                id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
+            /** @description Successful Response */
             200: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
@@ -2252,7 +2983,9 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path: { id: number };
+            path: {
+                id: number;
+            };
             cookie?: never;
         };
         requestBody: {
@@ -2261,10 +2994,76 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Successful Response */
             200: {
-                headers: { [name: string]: unknown };
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_EvaluationCase_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
         };
@@ -2791,12 +3590,789 @@ export interface operations {
             };
         };
     };
+    list_retrieval_strategies_api_retrieval_strategies_get: {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_RetrievalStrategy__"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    create_retrieval_strategy_api_retrieval_strategies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalStrategyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    update_retrieval_strategy_status_api_retrieval_strategies__id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalStrategyStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    list_retrieval_strategy_versions_api_retrieval_strategies__id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_RetrievalStrategyVersion__"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    restore_retrieval_strategy_version_api_retrieval_strategies__id__versions__version__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    archive_retrieval_strategy_api_retrieval_strategies__id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    restore_retrieval_strategy_api_retrieval_strategies__id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    delete_retrieval_strategy_api_retrieval_strategies__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    update_retrieval_strategy_api_retrieval_strategies__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalStrategyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalStrategy_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
     list_experiments_api_retrieval_experiments_get: {
         parameters: {
             query?: {
                 page?: number;
                 size?: number;
                 status?: components["schemas"]["JobStatus"] | null;
+                include_archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -2965,6 +4541,437 @@ export interface operations {
             };
         };
     };
+    preview_retrieval_experiment_api_retrieval_experiments_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RetrievalPreviewResponse_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    copy_experiment_api_retrieval_experiments__id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentCopy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExperimentJob_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    export_experiment_api_retrieval_experiments__id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_str_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    archive_experiment_api_retrieval_experiments__id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExperimentSummary_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    restore_experiment_api_retrieval_experiments__id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExperimentSummary_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
     get_experiment_api_retrieval_experiments__id__get: {
         parameters: {
             query?: never;
@@ -2983,6 +4990,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ExperimentDetail_"];
+                };
+            };
+            /** @description Invalid business request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Resource state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Uploaded file is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Request validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description A required service is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+        };
+    };
+    delete_experiment_api_retrieval_experiments__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
                 };
             };
             /** @description Invalid business request */

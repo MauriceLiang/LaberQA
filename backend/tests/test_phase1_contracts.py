@@ -4,9 +4,6 @@ import unittest
 from pathlib import Path
 
 import httpx
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.core.config import Settings, settings
 from app.core.database import database_is_ready, initialize_database
 from app.core.error_codes import ErrorCode
@@ -21,10 +18,13 @@ from app.repositories.retrieval_strategy_repository import RetrievalStrategyRepo
 from app.schemas.contracts import (
     EvaluationCase,
     ExperimentConfig,
+    ExperimentCreate,
     RetrievalStrategyCreate,
     RetrievalStrategyUpdate,
 )
 from app.services.retrieval_experiment_service import RetrievalExperimentService
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 EXPECTED_OPERATIONS = {
     ("get", "/api/health"),
@@ -147,23 +147,24 @@ class Phase1ContractTests(unittest.TestCase):
                 "/api/retrieval-experiments",
                 json={
                     "name": "invalid",
+                    "strategy_ids": [1, 1],
+                    "case_scope": "BUILTIN_BASELINE",
                     "case_ids": None,
                     "answer_style": "plain",
-                    "configs": [
-                        {
-                            "chunk_size": 400,
-                            "chunk_overlap": 400,
-                            "top_k": 5,
-                            "rerank_enabled": False,
-                            "rerank_top_n": 5,
-                            "score_threshold": 0.35,
-                        }
-                    ],
                 },
             )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], ErrorCode.INVALID_EXPERIMENT_CONFIG)
+
+    def test_experiment_requires_two_distinct_strategies(self) -> None:
+        for strategy_ids in ([1], [1, 1]):
+            with self.assertRaises(ValidationError):
+                ExperimentCreate(
+                    name="invalid",
+                    strategy_ids=strategy_ids,
+                    case_scope="BUILTIN_BASELINE",
+                )
 
     def test_session_route_creates_a_session(self) -> None:
         with TestClient(app) as client:

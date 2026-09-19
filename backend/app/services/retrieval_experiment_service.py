@@ -370,16 +370,40 @@ class RetrievalExperimentService:
             raise AppError(ErrorCode.INVALID_REQUEST, "实验没有可复制的评测用例", 400)
         return self.repository.create_experiment(name, case_count, snapshot)
 
-    async def preview(self, payload: RetrievalPreviewRequest) -> dict[str, Any]:
-        """Run one question through the current production index with a draft config."""
+    def _load_runnable_strategy(self, strategy_id: int) -> dict[str, Any]:
+        strategy = self.strategy_repository.get_strategy(strategy_id)
+        if strategy is None:
+            raise AppError(
+                ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND,
+                "检索策略不存在",
+                http_status=404,
+            )
+        if strategy["archived_at"] is not None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "检索策略已归档，无法运行",
+                http_status=409,
+            )
+        if not strategy["is_active"]:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                "检索策略已停用，无法运行",
+                http_status=409,
+            )
+        return strategy
 
+    async def preview(self, payload: RetrievalPreviewRequest) -> dict[str, Any]:
+        """Run one question through the production index for a saved strategy."""
+
+        strategy = self._load_runnable_strategy(payload.strategy_id)
+        strategy_config = ExperimentConfig.model_validate(strategy["config"])
         if not self.document_repository.list_success_documents():
             raise AppError(
                 ErrorCode.KNOWLEDGE_BASE_NOT_READY,
                 "没有可用于试跑的成功资料",
                 http_status=503,
             )
-        runtime_config = _runtime_config(self.config, payload.config)
+        runtime_config = _runtime_config(self.config, strategy_config)
         retrieval_service = RetrievalService(
             runtime_config,
             repository=self.document_repository,
@@ -439,6 +463,14 @@ class RetrievalExperimentService:
             or "没有候选片段"
         )
         return {
+            "strategy_id": int(strategy["id"]),
+            "strategy_name": strategy["name"],
+            "strategy_version": int(strategy["version"]),
+            "index_mode": "PRODUCTION_INDEX_REUSE",
+            "limitations": [
+                "快速试跑复用生产索引",
+                "Chunk Size 与 Chunk Overlap 不会重新切分",
+            ],
             "question": payload.question,
             "rewritten_question": output["rewritten_question"],
             "answer": output["answer"],
@@ -446,28 +478,28 @@ class RetrievalExperimentService:
             "retrieval_ms": output["retrieval_ms"],
             "retrieved_sources": retrieved_sources,
             "citations": output["citations"],
-            "config": payload.config.model_dump(mode="json"),
+            "config": strategy_config.model_dump(mode="json"),
             "trace": [
                 {
                     "stage": "文本分块",
                     "status": "completed",
-                    "detail": "试跑复用生产索引；批量实验会按策略重新分块",
+                    "detail": "试跑复用生产索引；正式实验会按策略重新分块",
                     "duration_ms": None,
                 },
                 {
                     "stage": "初步召回",
                     "status": "completed" if retrieved_sources else "skipped",
-                    "detail": f"召回 {len(retrieved_sources)} 个候选片段（Top-k {payload.config.top_k}）",
+                    "detail": f"召回 {len(retrieved_sources)} 个候选片段（Top-k {strategy_config.top_k}）",
                     "duration_ms": output["retrieval_ms"],
                 },
                 {
                     "stage": "重排",
                     "status": "completed"
-                    if payload.config.rerank_enabled
+                    if strategy_config.rerank_enabled
                     else "skipped",
                     "detail": (
-                        f"已保留重排后的前 {payload.config.rerank_top_n} 个片段"
-                        if payload.config.rerank_enabled
+                        f"已保留重排后的前 {strategy_config.rerank_top_n} 个片段"
+                        if strategy_config.rerank_enabled
                         else "当前策略未启用重排"
                     ),
                     "duration_ms": None,
@@ -477,7 +509,7 @@ class RetrievalExperimentService:
                     "status": "completed" if retrieved_sources else "skipped",
                     "detail": (
                         f"候选分数：{score_summary}；最高分 {max_retrieval_score:.3f}，"
-                        f"当前阈值 {payload.config.score_threshold:.2f}；"
+                        f"当前阈值 {strategy_config.score_threshold:.2f}；"
                         + (
                             "最高分达到门控阈值，交由证据判断"
                             if not refused
@@ -508,6 +540,21 @@ class RetrievalExperimentService:
         }
 
     def create_experiment(self, payload: ExperimentCreate) -> dict[str, Any]:
+        strategies = [
+            self._load_runnable_strategy(strategy_id)
+            for strategy_id in payload.strategy_ids
+        ]
+        strategy_snapshots = [
+            {
+                "strategy_id": int(strategy["id"]),
+                "name": strategy["name"],
+                "version": int(strategy["version"]),
+                "config": ExperimentConfig.model_validate(
+                    strategy["config"]
+                ).model_dump(mode="json"),
+            }
+            for strategy in strategies
+        ]
         if payload.case_scope is EvaluationCaseScope.BUILTIN_BASELINE:
             cases, _ = self.evaluation_service.repository.list_cases(
                 page=1,
@@ -558,9 +605,7 @@ class RetrievalExperimentService:
                 }
                 for case in cases
             ],
-            "configs": [config.model_dump(mode="json") for config in payload.configs],
-            "config_names": payload.config_names
-            or [f"配置 {index + 1}" for index in range(len(payload.configs))],
+            "strategy_snapshots": strategy_snapshots,
             "embedding_signature": signature.model_dump(mode="json"),
             "runtime_config": runtime_config_snapshot(self.config),
         }
@@ -647,9 +692,10 @@ class RetrievalExperimentService:
         cases = _snapshot_cases(
             experiment["snapshot"], self.evaluation_service.repository
         )
+        configs = _snapshot_configs(experiment["snapshot"])
         config_results = _calculate_config_results(
             cases,
-            experiment["snapshot"]["configs"],
+            configs,
             experiment["results"],
         )
         return {
@@ -659,7 +705,8 @@ class RetrievalExperimentService:
                 **runtime_config_snapshot(self.config),
                 **experiment["snapshot"].get("runtime_config", {}),
             },
-            "config_names": experiment["snapshot"].get("config_names", []),
+            "case_count": len(cases),
+            "strategy_snapshots": _strategy_snapshots(experiment["snapshot"]),
             "config_results": config_results,
         }
 
@@ -677,8 +724,9 @@ class RetrievalExperimentService:
             profiles: dict[
                 tuple[int, int], tuple[list[dict[str, Any]], VectorStoreService]
             ] = {}
+            configs = _snapshot_configs(snapshot)
 
-            for config_index, config_data in enumerate(snapshot["configs"]):
+            for config_index, config_data in enumerate(configs):
                 config = ExperimentConfig.model_validate(config_data)
                 profile_key = (config.chunk_size, config.chunk_overlap)
                 if profile_key not in profiles:
@@ -735,7 +783,7 @@ class RetrievalExperimentService:
                 raise RuntimeError("检索实验在执行过程中不存在")
             config_results = _calculate_config_results(
                 cases,
-                snapshot["configs"],
+                configs,
                 detail["results"],
             )
             best = _best_config(config_results, detail["results"])
@@ -1077,6 +1125,19 @@ def _failed_result(config_index: int, case_id: int, message: str) -> dict[str, A
         "retrieval_ms": None,
         "error_message": message[:500],
     }
+
+
+def _strategy_snapshots(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    snapshots = snapshot.get("strategy_snapshots")
+    return snapshots if isinstance(snapshots, list) else []
+
+
+def _snapshot_configs(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    snapshots = _strategy_snapshots(snapshot)
+    if snapshots:
+        return [item["config"] for item in snapshots]
+    legacy_configs = snapshot.get("configs", [])
+    return legacy_configs if isinstance(legacy_configs, list) else []
 
 
 def _snapshot_cases(snapshot: dict[str, Any], repository: Any) -> list[dict[str, Any]]:

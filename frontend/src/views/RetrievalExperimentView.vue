@@ -48,22 +48,6 @@ function cloneConfig(config: ExperimentConfig): ExperimentConfig {
   return { ...config }
 }
 
-function fallbackStrategies(): RetrievalStrategy[] {
-  return experimentGroups.map((group, index) => ({
-    id: -(index + 1),
-    name: `基线 ${group.label}`,
-    description: '内置基线策略',
-    builtin_key: `baseline_${group.label.toLowerCase()}`,
-    config: cloneConfig(group.config),
-    is_builtin: true,
-    version: 1,
-    is_active: true,
-    archived_at: null,
-    created_at: '',
-    updated_at: '',
-  }))
-}
-
 const experiments = ref<ExperimentSummary[]>([])
 const page = ref(1)
 const pageSize = 10
@@ -75,6 +59,8 @@ const experimentName = ref('')
 const answerStyle = ref<'' | 'plain' | 'legal'>('')
 const caseScope = ref<ExperimentCaseScope>('BUILTIN_BASELINE')
 const evaluationCases = ref<EvaluationCase[]>([])
+const evaluationCaseTotal = ref(0)
+const builtinCaseTotal = ref(0)
 const selectedCaseIds = ref<number[]>([])
 const caseLoading = ref(false)
 const caseError = ref('')
@@ -89,7 +75,8 @@ const detailRequests = new Set<number>()
 const strategies = ref<RetrievalStrategy[]>([])
 const strategyLoading = ref(false)
 const strategyError = ref('')
-const selectedStrategyIds = ref<number[]>([])
+const previewStrategyId = ref<number>()
+const experimentStrategyIds = ref<number[]>([])
 const strategyEditorVisible = ref(false)
 const strategyEditorId = ref<number>()
 const strategySaving = ref(false)
@@ -105,15 +92,10 @@ const strategyDraft = reactive<RetrievalStrategyPayload>({
   description: '',
   config: cloneConfig(experimentGroups[0].config),
 })
-const previewVisible = ref(false)
 const previewQuestion = ref('公司拖欠工资，我应该准备什么材料？')
 const previewLoading = ref(false)
 const previewError = ref('')
 const previewResult = ref<RetrievalPreview>()
-const comparisonVisible = ref(false)
-const comparisonLoading = ref(false)
-const comparisonError = ref('')
-const comparisonResults = ref<RetrievalPreview[]>([])
 const deletingExperimentId = ref<number>()
 const copyingExperimentId = ref<number>()
 const archivingExperimentId = ref<number>()
@@ -126,9 +108,15 @@ const selectedName = computed(() => detail.value?.name ?? experiments.value.find
 const isTerminal = (value: ExperimentStatus | undefined) => value === 'COMPLETED' || value === 'FAILED'
 const configResults = computed(() => new Map((detail.value?.config_results ?? []).map((item) => [item.config_index, item])))
 const selectedConfigResults = computed(() => detail.value?.results.filter((item) => item.config_index === expandedConfigIndex.value) ?? [])
-const selectedStrategies = computed(() => strategies.value.filter((item) => item.is_active && !item.archived_at && selectedStrategyIds.value.includes(item.id)))
 const availableStrategies = computed(() => strategies.value.filter((item) => item.is_active && !item.archived_at))
-const activeStrategy = computed(() => selectedStrategies.value[0] ?? availableStrategies.value[0])
+const previewStrategy = computed(() => availableStrategies.value.find((item) => item.id === previewStrategyId.value))
+const experimentStrategies = computed(() => availableStrategies.value.filter((item) => experimentStrategyIds.value.includes(item.id)))
+const experimentCaseCount = computed(() => {
+  if (caseScope.value === 'SELECTED') return selectedCaseIds.value.length
+  if (caseScope.value === 'BUILTIN_BASELINE') return builtinCaseTotal.value
+  return evaluationCaseTotal.value
+})
+const estimatedRuns = computed(() => experimentStrategies.value.length * experimentCaseCount.value)
 const strategyEditorTitle = computed(() => strategyEditorId.value === undefined ? '新建检索策略' : '编辑检索策略')
 const strategyDraftWarning = computed(() => {
   if (strategyDraft.config.score_threshold >= 0.8) return '阈值较高，可能过滤掉有用材料。建议先试跑确认。'
@@ -136,11 +124,62 @@ const strategyDraftWarning = computed(() => {
   if (!strategyDraft.config.rerank_enabled) return '关闭重排会减少处理步骤，但可能降低候选材料的排序准确性。'
   return ''
 })
-const detailConfigGroups = computed(() => (detail.value?.config_results ?? []).map((result, index) => ({
-  label: detail.value?.config_names?.[index] ?? experimentGroups[index]?.label ?? `配置 ${index + 1}`,
-  config: result.config,
-})))
-const comparisonStrategies = computed(() => selectedStrategies.value.slice(0, 2))
+const detailConfigGroups = computed(() => (detail.value?.config_results ?? []).map((result, index) => {
+  const snapshot = detail.value?.strategy_snapshots?.[index]
+  return {
+    label: snapshot
+      ? snapshot.name + ' · v' + snapshot.version
+      : experimentGroups[index]?.label ?? '配置 ' + (index + 1),
+    config: snapshot?.config ?? result.config,
+  }
+}))
+const experimentConclusion = computed(() => {
+  const current = detail.value
+  const results = current?.config_results ?? []
+  if (!current || current.status !== 'COMPLETED' || results.length === 0) return []
+  const caseCount = current.case_count || Math.round(current.progress_total / results.length)
+  const lines = ['本次实验共比较 ' + results.length + ' 条策略、' + caseCount + ' 条测试问题。']
+  const highestCitation = results.reduce((best, item) => (
+    item.citation_hit_rate !== null
+      && (best === undefined || best.citation_hit_rate === null || item.citation_hit_rate > best.citation_hit_rate)
+      ? item
+      : best
+  ), undefined as ExperimentConfigResult | undefined)
+  const highestAccuracy = results.reduce((best, item) => (
+    item.accuracy !== null
+      && (best === undefined || best.accuracy === null || item.accuracy > best.accuracy)
+      ? item
+      : best
+  ), undefined as ExperimentConfigResult | undefined)
+  const fastest = results.reduce((best, item) => (
+    item.avg_retrieval_ms !== null
+      && (best === undefined || best.avg_retrieval_ms === null || item.avg_retrieval_ms < best.avg_retrieval_ms)
+      ? item
+      : best
+  ), undefined as ExperimentConfigResult | undefined)
+  if (highestCitation && highestCitation.citation_hit_rate !== null) {
+    const label = detailConfigGroups.value[highestCitation.config_index]?.label
+      ?? '策略 ' + (highestCitation.config_index + 1)
+    lines.push('引用命中率最高：' + label + '（' + formatRate(highestCitation.citation_hit_rate) + '）。')
+  }
+  if (highestAccuracy && highestAccuracy.accuracy !== null) {
+    const label = detailConfigGroups.value[highestAccuracy.config_index]?.label
+      ?? '策略 ' + (highestAccuracy.config_index + 1)
+    lines.push('回答正确率最高：' + label + '（' + formatRate(highestAccuracy.accuracy) + '）。')
+  }
+  if (fastest && fastest.avg_retrieval_ms !== null) {
+    const label = detailConfigGroups.value[fastest.config_index]?.label
+      ?? '策略 ' + (fastest.config_index + 1)
+    lines.push('平均检索耗时最低：' + label + '（' + formatDuration(fastest.avg_retrieval_ms) + '）。')
+  }
+  if (current.best_config_index !== null) {
+    const label = detailConfigGroups.value[current.best_config_index]?.label
+      ?? '策略 ' + (current.best_config_index + 1)
+    lines.push('当前综合排序下表现最高：' + label + '。')
+  }
+  lines.push('以上结果仅适用于本次测试集和当前知识库。')
+  return lines
+})
 
 function stopPolling() {
   if (pollTimer !== undefined) {
@@ -218,13 +257,24 @@ async function loadEvaluationCases() {
   caseLoading.value = true
   caseError.value = ''
   try {
-    const result = await getEvaluationCases({
-      page: 1,
-      size: 100,
-      status: 'ACTIVE',
-      include_archived: false,
-    })
-    evaluationCases.value = result.items
+    const [allResult, builtinResult] = await Promise.all([
+      getEvaluationCases({
+        page: 1,
+        size: 100,
+        status: 'ACTIVE',
+        include_archived: false,
+      }),
+      getEvaluationCases({
+        page: 1,
+        size: 100,
+        status: 'ACTIVE',
+        origin: 'BUILTIN',
+        include_archived: false,
+      }),
+    ])
+    evaluationCases.value = allResult.items
+    evaluationCaseTotal.value = allResult.total
+    builtinCaseTotal.value = builtinResult.total
   } catch (error) {
     caseError.value = getErrorMessage(error)
   } finally {
@@ -243,27 +293,14 @@ async function loadStrategies() {
   try {
     strategies.value = await listRetrievalStrategies({ include_archived: true })
   } catch (error) {
-    // Keep the page usable while an older backend is being upgraded.
-    strategies.value = fallbackStrategies()
+    strategies.value = []
     strategyError.value = getErrorMessage(error)
   } finally {
-    if (strategies.value.length > 0 && selectedStrategyIds.value.length === 0) {
-      selectedStrategyIds.value = availableStrategies.value.map((item) => item.id)
+    if (previewStrategyId.value === undefined && availableStrategies.value.length > 0) {
+      previewStrategyId.value = availableStrategies.value[0].id
     }
     strategyLoading.value = false
   }
-}
-
-function isStrategySelected(id: number) {
-  return selectedStrategyIds.value.includes(id)
-}
-
-function toggleStrategy(id: number) {
-  const strategy = strategies.value.find((item) => item.id === id)
-  if (!strategy?.is_active || strategy.archived_at) return
-  selectedStrategyIds.value = isStrategySelected(id)
-    ? selectedStrategyIds.value.filter((item) => item !== id)
-    : [...selectedStrategyIds.value, id]
 }
 
 const strategyActionId = ref<number>()
@@ -281,7 +318,8 @@ async function toggleStrategyActive(strategy: RetrievalStrategy) {
     const updated = await setRetrievalStrategyActive(strategy.id, !strategy.is_active)
     replaceStrategy(updated)
     if (!updated.is_active) {
-      selectedStrategyIds.value = selectedStrategyIds.value.filter((id) => id !== updated.id)
+      experimentStrategyIds.value = experimentStrategyIds.value.filter((id) => id !== updated.id)
+      if (previewStrategyId.value === updated.id) previewStrategyId.value = undefined
     }
     ElMessage.success(updated.is_active ? '策略已启用' : '策略已停用')
   } catch (error) {
@@ -302,7 +340,8 @@ async function archiveStrategy(strategy: RetrievalStrategy) {
     strategyActionId.value = strategy.id
     const archived = await archiveRetrievalStrategy(strategy.id)
     replaceStrategy(archived)
-    selectedStrategyIds.value = selectedStrategyIds.value.filter((id) => id !== archived.id)
+    experimentStrategyIds.value = experimentStrategyIds.value.filter((id) => id !== archived.id)
+    if (previewStrategyId.value === archived.id) previewStrategyId.value = undefined
     ElMessage.success('策略已归档')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') strategyError.value = getErrorMessage(error)
@@ -369,8 +408,8 @@ async function saveStrategy() {
     const existingIndex = strategies.value.findIndex((item) => item.id === saved.id)
     if (existingIndex >= 0) strategies.value.splice(existingIndex, 1, saved)
     else strategies.value.push(saved)
-    if (!selectedStrategyIds.value.includes(saved.id)) {
-      selectedStrategyIds.value = [...selectedStrategyIds.value, saved.id]
+    if (previewStrategyId.value === undefined && saved.is_active && !saved.archived_at) {
+      previewStrategyId.value = saved.id
     }
     strategyEditorVisible.value = false
     ElMessage.success(strategyEditorId.value === undefined ? '策略已创建' : '策略已更新')
@@ -432,62 +471,46 @@ async function removeStrategy(strategy: RetrievalStrategy) {
     )
     await deleteRetrievalStrategy(strategy.id)
     strategies.value = strategies.value.filter((item) => item.id !== strategy.id)
-    selectedStrategyIds.value = selectedStrategyIds.value.filter((id) => id !== strategy.id)
+    experimentStrategyIds.value = experimentStrategyIds.value.filter((id) => id !== strategy.id)
+    if (previewStrategyId.value === strategy.id) previewStrategyId.value = undefined
     ElMessage.success('策略已删除')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') strategyError.value = getErrorMessage(error)
   }
 }
 
-async function runPreview(strategy = activeStrategy.value) {
+function openPreview(strategy: RetrievalStrategy) {
+  previewStrategyId.value = strategy.id
+  previewResult.value = undefined
+  previewError.value = ''
+}
+
+async function runPreview() {
+  const strategy = previewStrategy.value
   if (!strategy) {
-    previewError.value = '请先选择一个检索策略'
+    previewError.value = '请先选择一个启用中的检索策略'
     return
   }
   const question = previewQuestion.value.trim()
   if (!question) {
     previewError.value = '请输入要试跑的问题'
-    previewVisible.value = true
     return
   }
-  previewVisible.value = true
+  const strategyId = strategy.id
   previewLoading.value = true
   previewError.value = ''
   previewResult.value = undefined
   try {
-    previewResult.value = await previewRetrieval({
+    const result = await previewRetrieval({
       question,
       answer_style: answerStyle.value || 'plain',
-      config: cloneConfig(strategy.config),
+      strategy_id: strategyId,
     })
+    if (previewStrategyId.value === strategyId) previewResult.value = result
   } catch (error) {
     previewError.value = getErrorMessage(error)
   } finally {
     previewLoading.value = false
-  }
-}
-
-async function runComparison() {
-  if (comparisonStrategies.value.length < 2) {
-    ElMessage.warning('请至少选择两条策略进行对比')
-    return
-  }
-  comparisonVisible.value = true
-  comparisonLoading.value = true
-  comparisonError.value = ''
-  comparisonResults.value = []
-  try {
-    comparisonResults.value = await Promise.all(
-      comparisonStrategies.value.map((strategy) => previewRetrieval({
-        question: previewQuestion.value.trim() || '公司拖欠工资，我应该准备什么材料？',
-        answer_style: answerStyle.value || 'plain',
-        config: cloneConfig(strategy.config),
-      })),
-    )
-  } catch (error) {
-    comparisonError.value = getErrorMessage(error)
-  } finally {
-    comparisonLoading.value = false
   }
 }
 
@@ -497,8 +520,8 @@ async function submitExperiment() {
     createError.value = '请填写实验名称'
     return
   }
-  if (selectedStrategies.value.length === 0) {
-    createError.value = '至少选择一个检索策略'
+  if (experimentStrategies.value.length < 2) {
+    createError.value = '检索策略对比实验至少需要选择两条策略'
     return
   }
   if (caseScope.value === 'SELECTED' && selectedCaseIds.value.length === 0) {
@@ -509,16 +532,12 @@ async function submitExperiment() {
   creating.value = true
   createError.value = ''
   try {
-    const selected = selectedStrategies.value
     const job = await createExperiment({
       name,
+      strategy_ids: experimentStrategies.value.map((strategy) => strategy.id),
       case_ids: caseScope.value === 'SELECTED' ? selectedCaseIds.value : null,
       case_scope: caseScope.value,
       answer_style: answerStyle.value || 'plain',
-      configs: selected.map((strategy) => cloneConfig(strategy.config)),
-      ...(selected.every((strategy) => strategy.id > 0)
-        ? { config_names: selected.map((strategy) => strategy.name) }
-        : {}),
     })
     stopPolling()
     selectionVersion += 1
@@ -716,43 +735,31 @@ onBeforeUnmount(() => {
     <header class="page-intro documents-page-intro">
       <div>
         <h1 id="experiment-title">检索策略实验</h1>
-        <p>先用单条问题验证检索链路，再批量对比选中的策略和命中结果。</p>
+        <p>先单题验证一条策略，再使用统一问题集创建正式多策略实验。</p>
       </div>
-      <span class="experiment-count">已选 {{ selectedStrategies.length }} 组策略</span>
     </header>
 
     <section class="experiment-panel experiment-workbench" aria-labelledby="strategy-workbench-title">
       <div class="experiment-heading">
         <div>
-          <h2 id="strategy-workbench-title">策略工作台</h2>
-          <p>选择策略后可直接试跑；内置策略只能复制，复制后可以按业务资料调整。</p>
+          <h2 id="strategy-workbench-title">策略库</h2>
+          <p>查看参数并选择一条策略进入单题快速验证；正式实验在下方单独选择多条策略。</p>
         </div>
         <div class="experiment-heading-actions">
-          <ElButton class="experiment-secondary" type="primary" plain :disabled="comparisonStrategies.length < 2" @click="runComparison">对比已选</ElButton>
           <ElButton class="experiment-secondary" type="primary" plain @click="openStrategyEditor()">新建策略</ElButton>
         </div>
       </div>
-      <p v-if="strategyError" class="experiment-inline-hint" role="status">策略服务暂不可用，当前使用页面内置基线：{{ strategyError }}</p>
+      <p v-if="strategyError" class="experiment-inline-hint" role="status">策略服务暂不可用：{{ strategyError }}</p>
       <div class="strategy-grid" :aria-busy="strategyLoading">
         <article
           v-for="strategy in strategies"
           :key="strategy.id"
           class="strategy-card"
-          :class="{
-            'strategy-card-selected': isStrategySelected(strategy.id),
-            'strategy-card-disabled': !strategy.is_active || strategy.archived_at,
-          }"
+          :class="{ 'strategy-card-disabled': !strategy.is_active || strategy.archived_at }"
         >
-          <label class="strategy-card-select">
-            <input
-              type="checkbox"
-              :checked="isStrategySelected(strategy.id)"
-              :disabled="!strategy.is_active || !!strategy.archived_at"
-              :aria-label="`选择策略 ${strategy.name}`"
-              @change="toggleStrategy(strategy.id)"
-            />
+          <div class="strategy-card-select">
             <span>{{ strategy.name }} <em>v{{ strategy.version }}</em><em v-if="strategy.archived_at"> · 已归档</em><em v-else-if="!strategy.is_active"> · 已停用</em></span>
-          </label>
+          </div>
           <p>{{ strategy.description }}</p>
           <dl class="strategy-card-meta">
             <div><dt>分块</dt><dd>{{ strategy.config.chunk_size }} / {{ strategy.config.chunk_overlap }}</dd></div>
@@ -761,7 +768,7 @@ onBeforeUnmount(() => {
             <div><dt>阈值</dt><dd>{{ strategy.config.score_threshold.toFixed(2) }}</dd></div>
           </dl>
           <div class="strategy-card-actions">
-            <ElButton text :disabled="!strategy.is_active || !!strategy.archived_at" @click="runPreview(strategy)">试跑</ElButton>
+            <ElButton text :disabled="!strategy.is_active || !!strategy.archived_at" @click="openPreview(strategy)">单题试跑</ElButton>
             <ElButton text @click="copyStrategy(strategy)">{{ strategy.is_builtin ? '复制' : '编辑' }}</ElButton>
             <ElButton text @click="openStrategyVersions(strategy)">版本</ElButton>
             <ElButton
@@ -781,57 +788,75 @@ onBeforeUnmount(() => {
         </article>
         <p v-if="!strategyLoading && strategies.length === 0" class="experiment-empty">暂无策略，请先新建一条策略。</p>
       </div>
-      <div class="quick-preview-bar">
-        <div>
-          <strong>快速试跑</strong>
-          <span>使用当前选中的第一条策略验证一个真实问题</span>
-        </div>
-        <input v-model="previewQuestion" class="quick-preview-input" maxlength="2000" placeholder="例如：公司拖欠工资，我应该准备什么材料？" @keyup.enter="runPreview()" />
-        <ElButton class="experiment-primary" :disabled="!activeStrategy || previewLoading" :loading="previewLoading" @click="runPreview()">试跑 1 条</ElButton>
-      </div>
     </section>
 
-    <section class="experiment-panel" aria-labelledby="experiment-config-title">
+    <section class="experiment-panel preview-panel" aria-labelledby="preview-title">
       <div class="experiment-heading">
         <div>
-          <h2 id="experiment-config-title">内置基线参数参考</h2>
-          <p>批量实验会为每条选中的策略独立构建分块索引，避免影响生产检索。</p>
+          <h2 id="preview-title">单题快速验证</h2>
+          <p>快速试跑复用当前生产索引，仅用于确认一条策略的检索链路。</p>
         </div>
       </div>
-      <div class="experiment-table-wrap">
-        <table class="experiment-table experiment-config-table">
-          <thead>
-            <tr>
-              <th scope="col">组别</th>
-              <th scope="col">Chunk Size</th>
-              <th scope="col">Overlap</th>
-              <th scope="col">Top-k</th>
-              <th scope="col">Rerank</th>
-              <th scope="col">Rerank Top-N</th>
-              <th scope="col">阈值</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="group in experimentGroups" :key="group.label">
-              <th scope="row">{{ group.label }}</th>
-              <td>{{ group.config.chunk_size }}</td>
-              <td>{{ group.config.chunk_overlap }}</td>
-              <td>{{ group.config.top_k }}</td>
-              <td>{{ group.config.rerank_enabled ? '开启' : '关闭' }}</td>
-              <td>{{ group.config.rerank_top_n }}</td>
-              <td>{{ group.config.score_threshold.toFixed(2) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="preview-form">
+        <label>
+          <span>策略</span>
+          <ElSelect v-model="previewStrategyId" class="experiment-create-select" aria-label="单题试跑策略" placeholder="选择一条策略">
+            <ElOption
+              v-for="strategy in availableStrategies"
+              :key="strategy.id"
+              :label="strategy.name + ' · v' + strategy.version"
+              :value="strategy.id"
+            />
+          </ElSelect>
+        </label>
+        <label class="preview-question-field">
+          <span>测试问题</span>
+          <ElInput v-model="previewQuestion" type="textarea" :rows="2" maxlength="2000" placeholder="例如：公司拖欠工资，我应该准备什么材料？" />
+        </label>
+        <ElButton class="experiment-primary preview-submit" type="primary" :loading="previewLoading" :disabled="!previewStrategy" @click="runPreview">开始试跑</ElButton>
       </div>
+      <p class="experiment-inline-hint">快速试跑复用当前生产索引。Top-k、Rerank、Rerank Top-N 和阈值会生效；Chunk Size / Overlap 不会重新切分。涉及切块粒度比较时，请创建正式实验。</p>
+      <p v-if="previewError" class="experiment-error" role="alert">{{ previewError }}</p>
+      <div v-if="previewLoading" class="preview-loading">正在执行检索链路…</div>
+      <template v-if="previewResult">
+        <div class="preview-result-identity">
+          <strong>{{ previewResult.strategy_name }} · v{{ previewResult.strategy_version }}</strong>
+          <span>{{ previewResult.index_mode }}</span>
+        </div>
+        <p class="experiment-inline-hint">运行限制：{{ previewResult.limitations.join('；') }}</p>
+        <div class="preview-answer" :class="{ 'preview-answer-refused': previewResult.refused }">
+          <div class="preview-answer-heading"><strong>{{ previewResult.refused ? '证据门控结果：建议拒答' : '试跑回答' }}</strong><span>{{ previewResult.retrieval_ms }} ms</span></div>
+          <p>{{ previewResult.answer }}</p>
+        </div>
+        <div class="preview-trace">
+          <h3>链路检查</h3>
+          <ol>
+            <li v-for="stage in previewResult.trace" :key="stage.stage">
+              <span class="preview-trace-dot" :class="'preview-trace-' + stage.status" aria-hidden="true" />
+              <div><strong>{{ stage.stage }}</strong><span>{{ stage.detail }}</span></div>
+            </li>
+          </ol>
+        </div>
+        <details class="preview-sources" :open="previewResult.retrieved_sources.length > 0">
+          <summary>召回片段（{{ previewResult.retrieved_sources.length }}）</summary>
+          <ul v-if="previewResult.retrieved_sources.length > 0">
+            <li v-for="source in previewResult.retrieved_sources" :key="source.chunk_id">
+              <strong>{{ source.file_name }} · 第 {{ source.chunk_no }} 段</strong>
+              <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}</span>
+              <p>{{ source.content }}</p>
+            </li>
+          </ul>
+          <p v-else class="experiment-muted">没有召回片段，建议降低阈值或检查资料覆盖范围。</p>
+        </details>
+      </template>
     </section>
 
     <section class="experiment-panel experiment-create-panel" aria-labelledby="experiment-create-title">
       <div class="experiment-create-layout">
         <div class="experiment-heading">
           <div>
-            <h2 id="experiment-create-title">创建实验</h2>
-            <p>每次实验运行当前选中的策略和评测用例</p>
+            <h2 id="experiment-create-title">创建正式对比实验</h2>
+            <p>至少选择两条策略，使用同一评测问题集比较完整检索链路。</p>
           </div>
         </div>
         <form class="experiment-create-form" @submit.prevent="submitExperiment">
@@ -845,6 +870,25 @@ onBeforeUnmount(() => {
               placeholder="例如：检索参数对比-20260915"
               aria-label="实验名称"
             />
+          </label>
+          <label class="experiment-strategy-field">
+            <span>对比策略</span>
+            <ElSelect
+              v-model="experimentStrategyIds"
+              class="experiment-create-select"
+              multiple
+              filterable
+              collapse-tags
+              placeholder="至少选择两条策略"
+              aria-label="对比策略"
+            >
+              <ElOption
+                v-for="strategy in availableStrategies"
+                :key="strategy.id"
+                :label="strategy.name + ' · v' + strategy.version"
+                :value="strategy.id"
+              />
+            </ElSelect>
           </label>
           <label>
             <span>评测问题集</span>
@@ -867,6 +911,9 @@ onBeforeUnmount(() => {
               <ElOption label="严谨版" value="legal" />
             </ElSelect>
           </label>
+          <p class="experiment-estimate" role="status">
+            本次实验预计执行：{{ experimentStrategies.length }} 个策略 × {{ experimentCaseCount }} 条问题 = {{ estimatedRuns }} 题次
+          </p>
           <ElButton class="experiment-primary" type="primary" native-type="submit" :loading="creating" :disabled="creating">
             {{ creating ? '创建中…' : '创建实验' }}
           </ElButton>
@@ -885,7 +932,7 @@ onBeforeUnmount(() => {
               <ElOption
                 v-for="item in evaluationCases"
                 :key="item.id"
-                :label="`#${item.id} ${item.topic}`"
+                :label="'#' + item.id + ' ' + item.topic"
                 :value="item.id"
               />
             </ElSelect>
@@ -1013,17 +1060,22 @@ onBeforeUnmount(() => {
             <span class="experiment-progress-percent">{{ progressPercent(detail.progress_current, detail.progress_total) }}%</span>
           </div>
           <p v-if="detail.best_config_index !== null" class="experiment-best" role="status">
-            当前最优配置：<strong>{{ detailConfigGroups[detail.best_config_index]?.label ?? '#' + detail.best_config_index }}</strong>
+            当前最优策略：<strong>{{ detailConfigGroups[detail.best_config_index]?.label ?? '#' + detail.best_config_index }}</strong>
           </p>
         </div>
         <p v-if="detail.best_config_index === null && detail.status === 'COMPLETED'" class="experiment-muted">没有可比较的完整配置结果。</p>
+
+        <section v-if="experimentConclusion.length > 0" class="experiment-conclusion" aria-labelledby="experiment-conclusion-title">
+          <h3 id="experiment-conclusion-title">实验结论</h3>
+          <p v-for="line in experimentConclusion" :key="line">{{ line }}</p>
+        </section>
 
         <div class="experiment-table-wrap">
           <table class="experiment-table experiment-results-table">
             <thead>
               <tr>
-                <th scope="col">配置</th>
-                <th scope="col">Chunk / Top-k / Rerank</th>
+                <th scope="col">策略</th>
+                <th scope="col">Chunk / Overlap · Top-k · Rerank</th>
                 <th scope="col">引用命中率</th>
                 <th scope="col">正确率</th>
                 <th scope="col">拒答率</th>
@@ -1046,7 +1098,7 @@ onBeforeUnmount(() => {
                     {{ group.label }}{{ index === detail.best_config_index ? ' · 最优' : '' }}
                   </button>
                 </th>
-                <td>{{ group.config.chunk_size }} / {{ group.config.top_k }} / {{ group.config.rerank_enabled ? '开启' : '关闭' }}</td>
+                <td>{{ group.config.chunk_size }} / {{ group.config.chunk_overlap }} · {{ group.config.top_k }} · {{ group.config.rerank_enabled ? '开启' : '关闭' }}</td>
                 <td>{{ formatRate(configResult(index)?.citation_hit_rate) }}</td>
                 <td>{{ formatRate(configResult(index)?.accuracy) }}</td>
                 <td>{{ formatRate(configResult(index)?.reject_rate) }}</td>
@@ -1151,70 +1203,7 @@ onBeforeUnmount(() => {
       </div>
     </ElDialog>
 
-    <ElDialog v-model="previewVisible" title="单条试跑与检索链路" width="820px" class="experiment-dialog">
-      <div class="preview-dialog-body">
-        <ElInput v-model="previewQuestion" type="textarea" :rows="2" maxlength="2000" placeholder="输入一个你想验证的问题" />
-        <div class="preview-dialog-actions">
-          <span v-if="activeStrategy">当前策略：{{ activeStrategy.name }}</span>
-          <ElButton class="experiment-primary" type="primary" :loading="previewLoading" :disabled="!activeStrategy" @click="runPreview()">重新试跑</ElButton>
-        </div>
-        <p v-if="previewError" class="experiment-error" role="alert">{{ previewError }}</p>
-        <div v-if="previewLoading" class="preview-loading">正在执行检索链路…</div>
-        <template v-if="previewResult">
-          <div class="preview-answer" :class="{ 'preview-answer-refused': previewResult.refused }">
-            <div class="preview-answer-heading"><strong>{{ previewResult.refused ? '证据门控结果：建议拒答' : '试跑回答' }}</strong><span>{{ previewResult.retrieval_ms }} ms</span></div>
-            <p>{{ previewResult.answer }}</p>
-          </div>
-          <div class="preview-trace">
-            <h3>链路检查</h3>
-            <ol>
-              <li v-for="stage in previewResult.trace" :key="stage.stage">
-                <span class="preview-trace-dot" :class="`preview-trace-${stage.status}`" aria-hidden="true" />
-                <div><strong>{{ stage.stage }}</strong><span>{{ stage.detail }}</span></div>
-              </li>
-            </ol>
-          </div>
-          <details class="preview-sources" :open="previewResult.retrieved_sources.length > 0">
-            <summary>召回片段（{{ previewResult.retrieved_sources.length }}）</summary>
-            <ul v-if="previewResult.retrieved_sources.length > 0">
-              <li v-for="source in previewResult.retrieved_sources" :key="source.chunk_id">
-                <strong>{{ source.file_name }} · 第 {{ source.chunk_no }} 段</strong>
-                <span>排序 {{ source.rank_no }} · 检索分 {{ source.retrieval_score.toFixed(3) }}</span>
-                <p>{{ source.content }}</p>
-              </li>
-            </ul>
-            <p v-else class="experiment-muted">没有召回片段，建议降低阈值或检查资料覆盖范围。</p>
-          </details>
-        </template>
-      </div>
-    </ElDialog>
 
-    <ElDialog v-model="comparisonVisible" title="策略 A/B 对比" width="900px" class="experiment-dialog">
-      <div class="comparison-dialog-body">
-        <p class="experiment-inline-hint">对比问题：{{ previewQuestion.trim() || '公司拖欠工资，我应该准备什么材料？' }}</p>
-        <div v-if="comparisonLoading" class="preview-loading">正在并行执行两条策略…</div>
-        <p v-if="comparisonError" class="experiment-error" role="alert">{{ comparisonError }}</p>
-        <div v-if="comparisonResults.length > 0" class="comparison-grid">
-          <article v-for="(result, index) in comparisonResults" :key="`${result.config.chunk_size}-${index}`" class="comparison-card">
-            <header>
-              <strong>{{ comparisonStrategies[index]?.name ?? `策略 ${index + 1}` }}</strong>
-              <span>{{ result.retrieval_ms }} ms · 引用 {{ result.citations.length }}</span>
-            </header>
-            <p class="comparison-result-status" :class="{ 'comparison-result-refused': result.refused }">{{ result.refused ? '证据不足，建议拒答' : '完成回答' }}</p>
-            <p class="comparison-answer">{{ result.answer }}</p>
-            <details class="preview-sources">
-              <summary>召回片段（{{ result.retrieved_sources.length }}）</summary>
-              <ul v-if="result.retrieved_sources.length > 0">
-                <li v-for="source in result.retrieved_sources" :key="source.chunk_id">
-                  <strong>{{ source.file_name }} · 第 {{ source.chunk_no }} 段</strong>
-                  <span>检索分 {{ source.retrieval_score.toFixed(3) }}</span>
-                </li>
-              </ul>
-            </details>
-          </article>
-        </div>
-      </div>
-    </ElDialog>
   </section>
 </template>
 
@@ -1227,22 +1216,60 @@ onBeforeUnmount(() => {
   color: #263548;
 }
 
-.experiment-count {
-  padding: 8px 15px;
-  color: #185b44;
-  background: #f0f7f4;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
 .experiment-panel {
   min-width: 0;
   padding: 14px 14px 12px;
   background: #fff;
   border: 1px solid #e1e9e4;
   border-radius: 9px;
+}
+
+.preview-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.8fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.preview-form label {
+  display: grid;
+  gap: 6px;
+  color: #758195;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.preview-form label > span {
+  min-height: 16px;
+}
+
+.preview-question-field :deep(.el-textarea__inner) {
+  min-height: 74px;
+  padding: 9px 10px;
+  color: #354257;
+  border-color: #d8e0da;
+  box-shadow: none;
+  font: inherit;
+}
+
+.preview-submit {
+  min-height: 38px;
+  height: 38px;
+}
+
+.preview-result-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: #315447;
+  font-size: 12px;
+}
+
+.preview-result-identity span {
+  color: #8793a4;
+  font-size: 11px;
 }
 
 .experiment-heading {
@@ -1436,6 +1463,18 @@ onBeforeUnmount(() => {
 
 .experiment-case-select-label {
   grid-column: 1 / -1;
+}
+
+.experiment-strategy-field {
+  grid-column: 1 / span 2;
+}
+
+.experiment-estimate {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #536077;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .experiment-create-form .experiment-primary {
@@ -1668,6 +1707,27 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+.experiment-conclusion {
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: #f7faf8;
+  border: 1px solid #dfece4;
+  border-radius: 8px;
+}
+
+.experiment-conclusion h3 {
+  margin: 0 0 7px;
+  color: #315447;
+  font-size: 13px;
+}
+
+.experiment-conclusion p {
+  margin: 4px 0 0;
+  color: #536077;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .experiment-results-table {
   min-width: 900px;
   table-layout: fixed;
@@ -1873,11 +1933,6 @@ onBeforeUnmount(() => {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.strategy-card-selected {
-  border-color: #8fc0ab;
-  box-shadow: 0 3px 12px rgb(18 96 71 / 8%);
-}
-
 .strategy-card-disabled {
   opacity: 0.68;
   background: #f5f7f6;
@@ -1890,13 +1945,6 @@ onBeforeUnmount(() => {
   color: #20352d;
   font-size: 13px;
   font-weight: 700;
-}
-
-.strategy-card-select input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: #126047;
 }
 
 .strategy-card-select em {
@@ -1998,51 +2046,6 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
-.quick-preview-bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 104px;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #e7ece9;
-}
-
-.quick-preview-bar > div:first-child {
-  display: grid;
-  gap: 3px;
-  color: #2d463b;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.quick-preview-bar > div:first-child span {
-  color: #8a95a5;
-  font-size: 11px;
-}
-
-.quick-preview-input {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 10px;
-  color: #354257;
-  background: #fff;
-  border: 1px solid #d8e4dd;
-  border-radius: 7px;
-  outline: 0;
-  font: inherit;
-  font-size: 12px;
-}
-
-.quick-preview-input:focus {
-  border-color: #8fc0ab;
-  box-shadow: 0 0 0 3px rgb(18 96 71 / 10%);
-}
-
-.quick-preview-input::placeholder {
-  color: #a0a9b5;
-}
-
 .experiment-table-action {
   padding: 2px 4px;
   font-size: 11px;
@@ -2076,8 +2079,7 @@ onBeforeUnmount(() => {
   align-items: start;
 }
 
-.strategy-editor-actions,
-.preview-dialog-actions {
+.strategy-editor-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -2087,17 +2089,6 @@ onBeforeUnmount(() => {
 .strategy-editor-actions {
   padding-top: 5px;
   border-top: 1px solid #edf1ee;
-}
-
-.preview-dialog-body {
-  display: grid;
-  gap: 12px;
-}
-
-.preview-dialog-actions {
-  justify-content: space-between;
-  color: #7a8798;
-  font-size: 12px;
 }
 
 .preview-loading {
@@ -2227,77 +2218,13 @@ onBeforeUnmount(() => {
 .preview-sources li span { margin-top: 3px; color: #8793a4; }
 .preview-sources li p { margin: 5px 0 0; color: #536077; font-size: 11px; line-height: 1.55; }
 
-.comparison-dialog-body {
-  display: grid;
-  gap: 10px;
-}
-
-.comparison-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.comparison-card {
-  min-width: 0;
-  padding: 12px;
-  background: #fbfdfc;
-  border: 1px solid #e2ebe6;
-  border-radius: 8px;
-}
-
-.comparison-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: #20352d;
-  font-size: 12px;
-}
-
-.comparison-card header span {
-  color: #8a95a5;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.comparison-result-status {
-  margin: 10px 0 0;
-  color: #168052;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.comparison-result-refused { color: #a47726; }
-
-.comparison-answer {
-  min-height: 74px;
-  margin: 7px 0 10px;
-  color: #354257;
-  font-size: 12px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
 @media (max-width: 820px) {
   .strategy-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .quick-preview-bar {
-    grid-template-columns: 1fr 104px;
-  }
-
-  .quick-preview-bar > div:first-child {
-    grid-column: 1 / -1;
-  }
-
   .strategy-editor-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .comparison-grid {
-    grid-template-columns: 1fr;
   }
 
   .experiment-create-layout {
@@ -2334,11 +2261,6 @@ onBeforeUnmount(() => {
     gap: 10px;
   }
 
-  .experiment-count {
-    padding: 7px 12px;
-    font-size: 12px;
-  }
-
   .experiment-panel {
     padding: 12px 10px 10px;
   }
@@ -2352,14 +2274,6 @@ onBeforeUnmount(() => {
     align-self: flex-start;
   }
 
-  .quick-preview-bar {
-    grid-template-columns: 1fr;
-  }
-
-  .quick-preview-bar .experiment-primary {
-    width: 100%;
-  }
-
   .experiment-create-form {
     grid-template-columns: 1fr;
   }
@@ -2368,12 +2282,21 @@ onBeforeUnmount(() => {
     white-space: normal;
   }
 
-  .experiment-name-field {
+  .experiment-name-field,
+  .experiment-strategy-field {
     grid-column: 1;
   }
 
   .experiment-create-form .experiment-primary {
     grid-column: 1;
+    width: 100%;
+  }
+
+  .preview-form {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-submit {
     width: 100%;
   }
 

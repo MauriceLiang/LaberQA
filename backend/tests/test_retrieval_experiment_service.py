@@ -7,10 +7,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi.testclient import TestClient
-
+import pytest
 from app.api.dependencies import get_retrieval_experiment_service
 from app.core.config import Settings, settings
+from app.core.error_codes import ErrorCode
+from app.core.errors import AppError
 from app.main import app
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.evaluation_repository import EvaluationRepository
@@ -21,6 +22,9 @@ from app.schemas.contracts import (
     EmbeddingSignature,
     ExperimentConfig,
     ExperimentCreate,
+    RetrievalPreviewRequest,
+    RetrievalStrategyCreate,
+    RetrievalStrategyUpdate,
 )
 from app.services.chat_service import ChatService
 from app.services.evaluation_service import EvaluationService
@@ -33,6 +37,7 @@ from app.services.retrieval_experiment_service import (
 )
 from app.services.session_service import SessionService
 from app.services.vector_store import VectorStoreService
+from fastapi.testclient import TestClient
 from tests.support import AsyncClientChatModel
 
 
@@ -193,7 +198,132 @@ def _make_environment(
         embedding_service=embedding,  # type: ignore[arg-type]
         evaluation_service=evaluation_service,
     )
+    service.initialize()
     return service, repository, config, database_path
+
+
+def _create_test_strategy_ids(service: RetrievalExperimentService) -> list[int]:
+    return [
+        int(
+            service.create_strategy(
+                RetrievalStrategyCreate(
+                    name=f"测试策略 {index + 1}",
+                    config=config,
+                )
+            )["id"]
+        )
+        for index, config in enumerate(_configs())
+    ]
+
+
+def test_preview_loads_strategy_and_returns_identity(tmp_path: Path) -> None:
+    service, _, _, _ = _make_environment(tmp_path)
+    strategy_ids = _create_test_strategy_ids(service)
+
+    result = asyncio.run(
+        service.preview(
+            RetrievalPreviewRequest(
+                question="可回答的劳动权益问题",
+                answer_style="plain",
+                strategy_id=strategy_ids[1],
+            )
+        )
+    )
+
+    assert result["strategy_id"] == strategy_ids[1]
+    assert result["strategy_name"] == "测试策略 2"
+    assert result["strategy_version"] == 1
+    assert result["index_mode"] == "PRODUCTION_INDEX_REUSE"
+    assert result["limitations"]
+    assert result["config"] == _configs()[1].model_dump(mode="json")
+
+
+def test_preview_rejects_missing_inactive_and_archived_strategies(
+    tmp_path: Path,
+) -> None:
+    service, _, _, _ = _make_environment(tmp_path)
+    active_id = _create_test_strategy_ids(service)[0]
+    inactive_id = int(
+        service.create_strategy(
+            RetrievalStrategyCreate(name="停用策略", config=_configs()[0])
+        )["id"]
+    )
+    service.set_strategy_active(inactive_id, False)
+    archived_id = int(
+        service.create_strategy(
+            RetrievalStrategyCreate(name="归档策略", config=_configs()[0])
+        )["id"]
+    )
+    service.archive_strategy(archived_id)
+
+    cases = (
+        (999999, 404, ErrorCode.RETRIEVAL_STRATEGY_NOT_FOUND),
+        (inactive_id, 409, ErrorCode.INVALID_REQUEST),
+        (archived_id, 409, ErrorCode.INVALID_REQUEST),
+    )
+    for strategy_id, expected_status, expected_code in cases:
+        with pytest.raises(AppError) as error:
+            asyncio.run(
+                service.preview(
+                    RetrievalPreviewRequest(
+                        question="可回答的劳动权益问题",
+                        strategy_id=strategy_id,
+                    )
+                )
+            )
+        assert error.value.http_status == expected_status
+        assert error.value.code == expected_code
+
+        with pytest.raises(AppError) as create_error:
+            service.create_experiment(
+                ExperimentCreate(
+                    name="invalid strategy experiment",
+                    strategy_ids=[strategy_id, active_id],
+                    case_scope="SELECTED",
+                    case_ids=[1],
+                )
+            )
+        assert create_error.value.http_status == expected_status
+        assert create_error.value.code == expected_code
+
+
+def test_experiment_snapshot_keeps_strategy_version_after_strategy_update(
+    tmp_path: Path,
+) -> None:
+    service, repository, _, _ = _make_environment(tmp_path)
+    strategy_ids = _create_test_strategy_ids(service)
+    experiment = service.create_experiment(
+        ExperimentCreate(
+            name="snapshot experiment",
+            strategy_ids=strategy_ids,
+            case_scope="SELECTED",
+            case_ids=[1],
+        )
+    )
+    before = repository.get_experiment(experiment["id"])
+    assert before is not None
+    snapshot_before = before["snapshot"]["strategy_snapshots"][0].copy()
+
+    updated = service.update_strategy(
+        strategy_ids[0],
+        RetrievalStrategyUpdate(
+            name="测试策略 1 v2",
+            description="更新后的策略",
+            config=ExperimentConfig(
+                chunk_size=140,
+                chunk_overlap=10,
+                top_k=20,
+                rerank_enabled=True,
+                rerank_top_n=5,
+                score_threshold=0.2,
+            ),
+        ),
+    )
+
+    after = repository.get_experiment(experiment["id"])
+    assert after is not None
+    assert updated["version"] == 2
+    assert after["snapshot"]["strategy_snapshots"][0] == snapshot_before
 
 
 def _production_hashes(production_dir: Path) -> dict[str, str]:
@@ -214,9 +344,10 @@ def test_experiment_uses_isolated_rechunked_indexes_and_persists_case_metrics(
     experiment = service.create_experiment(
         ExperimentCreate(
             name="offline retrieval comparison",
+            strategy_ids=_create_test_strategy_ids(service),
+            case_scope="SELECTED",
             case_ids=[1, 2],
             answer_style="plain",
-            configs=_configs(),
         )
     )
     snapshot = repository.get_experiment(experiment["id"])["snapshot"]
@@ -225,6 +356,11 @@ def test_experiment_uses_isolated_rechunked_indexes_and_persists_case_metrics(
         "langchain_community.vectorstores.FAISS"
     )
     assert snapshot["runtime_config"]["retrieval_type"] == "similarity"
+    assert [item["name"] for item in snapshot["strategy_snapshots"]] == [
+        "测试策略 1",
+        "测试策略 2",
+    ]
+    assert [item["version"] for item in snapshot["strategy_snapshots"]] == [1, 1]
 
     add_result = repository.add_result
 
@@ -480,9 +616,13 @@ def test_experiment_endpoints_accept_and_return_the_completed_job(
                 "/api/retrieval-experiments",
                 json={
                     "name": "API smoke experiment",
+                    "strategy_ids": [
+                        int(strategy["id"])
+                        for strategy in service.list_strategies()[:2]
+                    ],
+                    "case_scope": "SELECTED",
                     "case_ids": [1, 2],
                     "answer_style": "plain",
-                    "configs": [_configs()[0].model_dump(mode="json")],
                 },
             )
             experiment_id = accepted.json()["data"]["experiment_id"]
@@ -499,9 +639,9 @@ def test_experiment_endpoints_accept_and_return_the_completed_job(
     assert initial.json()["data"]["total"] == 0
     assert accepted.status_code == 202
     assert accepted.json()["data"]["status"] == "PENDING"
-    assert accepted.json()["data"]["progress_total"] == 2
+    assert accepted.json()["data"]["progress_total"] == 4
     assert detail.status_code == 200
     assert detail.json()["data"]["status"] == "COMPLETED"
-    assert detail.json()["data"]["progress_current"] == 2
+    assert detail.json()["data"]["progress_current"] == 4
     assert detail.json()["data"]["runtime_config"]["retrieval_type"] == "similarity"
-    assert len(detail.json()["data"]["config_results"]) == 1
+    assert len(detail.json()["data"]["config_results"]) == 2

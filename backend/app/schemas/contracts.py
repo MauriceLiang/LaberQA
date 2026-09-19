@@ -373,41 +373,24 @@ class ExperimentCreate(ApiModel):
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
     ]
+    strategy_ids: list[int] = Field(min_length=2)
+    case_scope: EvaluationCaseScope
     case_ids: list[int] | None = Field(default=None, min_length=1)
-    answer_style: AnswerStyle
-    configs: list[ExperimentConfig] = Field(min_length=1)
-    case_scope: EvaluationCaseScope | None = None
-    config_names: (
-        list[
-            Annotated[
-                str,
-                StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
-            ]
-        ]
-        | None
-    ) = None
+    answer_style: AnswerStyle = AnswerStyle.PLAIN
 
     @model_validator(mode="after")
     def unique_case_ids(self) -> "ExperimentCreate":
         if self.case_ids is not None and len(set(self.case_ids)) != len(self.case_ids):
             raise ValueError("case_ids must not contain duplicates")
-        if self.case_scope is None:
-            self.case_scope = (
-                EvaluationCaseScope.SELECTED
-                if self.case_ids is not None
-                else EvaluationCaseScope.BUILTIN_BASELINE
-            )
-        elif self.case_scope is EvaluationCaseScope.SELECTED and not self.case_ids:
+        if self.case_scope is EvaluationCaseScope.SELECTED and not self.case_ids:
             raise ValueError("SELECTED experiments require case_ids")
         elif (
             self.case_scope is not EvaluationCaseScope.SELECTED
             and self.case_ids is not None
         ):
             raise ValueError("case_ids is only valid for SELECTED experiments")
-        if self.config_names is not None and len(self.config_names) != len(
-            self.configs
-        ):
-            raise ValueError("config_names must match configs")
+        if len(set(self.strategy_ids)) != len(self.strategy_ids):
+            raise ValueError("strategy_ids must not contain duplicates")
         return self
 
 
@@ -443,6 +426,15 @@ class ExperimentConfigResult(ApiModel):
     avg_retrieval_ms: float | None
 
 
+class RetrievalStrategySnapshot(ApiModel):
+    strategy_id: int
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
+    version: int = Field(ge=1)
+    config: ExperimentConfig
+
+
 class ExperimentCaseResult(ApiModel):
     config_index: int
     case_id: int
@@ -469,7 +461,8 @@ class ExperimentDetail(JobProgress):
     runtime_config: LangChainRuntimeConfig
     archived_at: UtcDateTime | None = None
     best_config_index: int | None
-    config_names: list[str] = Field(default_factory=list)
+    case_count: int = Field(ge=0)
+    strategy_snapshots: list[RetrievalStrategySnapshot] = Field(default_factory=list)
     config_results: list[ExperimentConfigResult]
     results: list[ExperimentCaseResult]
 
@@ -525,8 +518,8 @@ class RetrievalPreviewRequest(ApiModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
     ]
-    answer_style: AnswerStyle
-    config: ExperimentConfig
+    answer_style: AnswerStyle = AnswerStyle.PLAIN
+    strategy_id: int
 
 
 class RetrievalTraceStage(ApiModel):
@@ -537,6 +530,11 @@ class RetrievalTraceStage(ApiModel):
 
 
 class RetrievalPreviewResponse(ApiModel):
+    strategy_id: int
+    strategy_name: str
+    strategy_version: int = Field(ge=1)
+    index_mode: str
+    limitations: list[str]
     question: str
     rewritten_question: str
     answer: str
