@@ -266,13 +266,13 @@ error    终止性错误事件
 | `model-cache/` | HuggingFace / Sentence Transformers 模型缓存 | 不提交，可重新下载 |
 | `backups/` | 备份包和恢复前快照 | 不提交，按运维策略保存 |
 
-删除容器不会自动删除上述宿主机挂载目录；生产环境应将 `data/`、`uploads/` 和配置文件纳入访问控制与备份策略。
+删除容器不会自动删除上述宿主机挂载目录；Caddy 的证书状态保存在 Docker 命名卷 `caddy_data` 和 `caddy_config` 中，切勿使用 `docker compose down -v`。生产环境应将 `data/`、`uploads/`、Caddy 命名卷和配置文件纳入访问控制与备份策略。
 
 ## 部署与运维
 
 ### Docker Compose 一键启动
 
-服务器只需要安装 Docker Engine 和 Docker Compose v2：
+服务器只需要安装 Docker Engine 和 Docker Compose v2，并将 `mauriceliang.xyz` 的 DNS 指向服务器公网 IP：
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -282,14 +282,15 @@ mkdir -p data uploads model-cache backups
 docker compose config
 docker compose up -d --build
 docker compose ps
-curl http://127.0.0.1/api/health
+curl https://mauriceliang.xyz/api/health
 ```
 
 部署架构：
 
-- `frontend`：Nginx 提供 Vue 静态资源，并将 `/api/*`、SSE 和 API 文档反向代理到后端。
+- `caddy`：对外提供 80/443，自动申请和续期 `mauriceliang.xyz` 的 TLS 证书，并将 HTTP 重定向到 HTTPS。
+- `frontend`：仅在 Compose 网络暴露 80，Nginx 提供 Vue 静态资源，并将 `/api/*`、SSE 和 API 文档反向代理到后端。
 - `backend`：运行 FastAPI、RAG 链路、文档解析、SQLite 和 FAISS。
-- 宿主机默认只暴露前端 `80` 端口，后端 `8000` 仅在 Compose 内部网络访问。
+- 宿主机只暴露 Caddy 的 `80` 和 `443`，frontend 的 `80` 与 backend 的 `8000` 仅在 Compose 内部网络访问。
 - `data/`、`uploads/`、`model-cache/` 通过宿主机目录持久化。
 
 常用运维命令：
@@ -297,6 +298,7 @@ curl http://127.0.0.1/api/health
 ```bash
 docker compose logs -f --tail=200 backend
 docker compose logs -f --tail=200 frontend
+docker compose logs -f --tail=200 caddy
 docker compose restart
 docker compose stop
 docker compose down
@@ -304,7 +306,7 @@ docker compose down
 ./deploy/restore.sh backups/<时间戳>/laborqa-runtime.tar.gz
 ```
 
-完整的首次部署、模型初始化、健康检查、备份、恢复、升级、回滚和故障排查流程见 [`deploy/README.md`](deploy/README.md)。生产环境如需公网访问，应在外层补充 HTTPS、身份认证、访问控制和密钥管理策略。
+完整的首次部署、模型初始化、健康检查、备份、恢复、升级、回滚和故障排查流程见 [`deploy/README.md`](deploy/README.md)。生产环境需确保 DNS、80/443 防火墙规则和密钥管理符合实际部署要求；如面向公网使用，还应在 Caddy 之外补充身份认证与访问控制策略。
 
 ## 开发与验证
 
