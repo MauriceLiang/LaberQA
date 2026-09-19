@@ -370,7 +370,7 @@ LaborQA/
 │   ├── public/assets/        # 品牌资源（含 brand-mark.png）
 │   ├── tests/                # 前端测试
 │   └── package.json
-├── docs/                     # 需求、设计、接口、原型和测试数据
+├── docs/                     # 本地需求、设计、接口、原型和测试数据（不随仓库发布）
 ├── reference-data/           # 随仓库维护的可审阅参考资料
 ├── data/                     # 运行时 SQLite 与 FAISS 数据
 ├── uploads/                  # 运行时上传文件
@@ -381,14 +381,12 @@ LaborQA/
 
 ## 文档索引
 
-- [产品需求文档](docs/劳动权益咨询问答台_需求文档v3.md)
-- [系统设计与项目开发文档](docs/劳动权益咨询问答台_系统设计与项目开发文档v4.md)
-- [前后端接口文档](docs/devdocs/劳动权益咨询问答台_前后端接口文档_详细设计版_v2.md)
-- [模块详细设计](docs/devdocs/劳动权益咨询问答台_模块详细设计与功能逻辑_详细设计版_v2.md)
-- [RAG 链路改造方案](docs/devdocs/LangChain_RAG链路改造方案.md)
+以下链接均指向会随仓库提交、远端可直接访问的文档：
+
 - [参考资料说明](reference-data/README.md)
 - [Docker 部署与运维](deploy/README.md)
-- [前端原型图](docs/prototypes/)
+
+项目本地的 `docs/` 目录还包含需求文档、系统设计、接口设计、开发规范、原型图和 `.docx` 交付物。这些资料已由仓库忽略规则排除，不上传到远端，因此不在这里创建远端链接；需要完整项目资料时，请从本地交付包或团队文档库获取。
 
 ## 贡献与资料维护
 
