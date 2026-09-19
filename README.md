@@ -10,6 +10,7 @@
 
 - **有据可查的问答**：支持多轮会话和流式回答，展示引用文件与原文片段，并可切换通俗解读或严谨条款风格。
 - **劳动法规知识库**：导入 PDF、DOC、DOCX、MD、TXT 文件，查看导入状态和文本片段；失败的资料可以重新导入。
+- **仓库参考资料**：reference-data/documents/ 内提供 8 份按主题整理的 Markdown 初始资料，可通过“资料管理”页面导入。
 - **咨询辅助**：提供材料清单工具、合规提示，并汇总知识库暂未覆盖的问题，便于补充资料。
 - **回答质量评测**：通过预置用例查看回答正确率、拒答率和引用命中情况。
 - **检索策略实验**：比较不同分块、召回数量和重排设置对检索与回答效果的影响。
@@ -121,19 +122,20 @@ docker compose up -d --build
 
 ## 首次使用
 
-项目不附带已构建的法规知识库。打开“资料管理”上传可公开使用的劳动法规或政策资料，等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX、MD 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
+仓库在 reference-data/documents/ 内提供 8 份可审阅的 Markdown 参考资料，但项目不附带已构建的法规知识库或向量索引。首次使用时打开“资料管理”，选择这些资料上传并等待导入成功后，再从首页开始提问。RAG 请求通过 LangChain 的 Prompt、Runnable、Retriever、ChatModel、Embeddings 和 VectorStore 接口编排；SQLite 继续作为业务数据真源，FAISS 作为可重建向量索引，模型通过 `ChatOpenAI` 连接 OpenAI-compatible Chat Completions 服务。检索只回查当前 Top-k 命中的 Chunk，避免每次问答加载全部成功片段。PDF、DOCX、MD 和 TXT 可直接解析；旧版 DOC 默认使用依赖中的 `msdoc2docx`，仅在该包不可用时回退到 LibreOffice。
 
 后端启动时会自动初始化 SQLite 数据库，无需手动执行 SQL。默认数据位置如下：
 
 | 内容 | 默认位置 |
 | --- | --- |
 | 本地配置 | 仓库根目录 `.env` |
+| 仓库参考资料 | reference-data/documents/ |
 | SQLite 数据库 | `data/app.db` |
 | 上传的原始文件 | `uploads/` |
 | 生产向量索引 | `data/faiss/production/` |
 | 检索实验索引 | `data/faiss/experiments/` |
 
-`.env`、上传文件和生成的数据目录已加入 Git 忽略规则；请勿将真实 API Key 提交到仓库。切换 Embedding Provider、模型、归一化方式或分块参数后，现有向量索引可能与新配置不兼容，恢复问答前需要重建索引。
+`.env`、上传文件和生成的数据目录已加入 Git 忽略规则；reference-data/ 中的参考资料会随仓库提交；请勿将真实 API Key 提交到仓库。切换 Embedding Provider、模型、归一化方式或分块参数后，现有向量索引可能与新配置不兼容，恢复问答前需要重建索引。
 
 ## 项目结构
 
@@ -150,6 +152,8 @@ frontend/
   src/api/          后端接口客户端
   tests/            前端测试
 docs/               需求、系统设计与开发文档
+reference-data/     随仓库维护的参考资料
+  documents/        Markdown 参考资料
 data/               本地数据库与向量索引（运行时生成）
 uploads/             上传的资料（运行时生成）
 ```
